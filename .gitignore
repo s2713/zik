@@ -1,0 +1,36 @@
+# --- dev-only files kept in the private zik-meta repo ---
+# NOTHING matching these patterns should ever enter the public repo.
+CLAUDE.md
+CLAUDE.*.md
+claude.*.md
+claudes_journal.md
+claude.issues.md
+claude.masterplan.md
+.claude/
+.claude-private/
+/plans/
+/secrets/
+*.secret
+*.key
+.env
+.env.*
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# --- build / runtime artefacts ---
+/build/
+/dist/
+/node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+/.venv/
+/venv/
