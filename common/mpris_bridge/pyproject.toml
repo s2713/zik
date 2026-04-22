@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "zik-mpris-bridge"
+version = "0.0.1"
+description = "zik MPRIS bridge (P3) — exposes playback state on the user session bus"
+authors = ["zik contributors"]
+license = "AGPL-3.0-or-later"
+readme = "README.md"
+packages = [{ include = "zik_mpris_bridge" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+dasbus = "^1.7"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+ruff = "^0.5"
+
+[tool.poetry.scripts]
+zik-mpris-bridge = "zik_mpris_bridge.__main__:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

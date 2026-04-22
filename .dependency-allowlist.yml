@@ -1,0 +1,24 @@
+# .dependency-allowlist.yml
+#
+# Single source of truth for runtime-critical pinned dependencies.
+#
+# Schema
+# ------
+#   python:
+#     "<package>":
+#       version: "<exact version>"    # pinned; bumped only via maintainer-reviewed PR
+#       notes:   "<free text>"         # why it's here, upstream URL, etc.
+#   rust:
+#     "<crate>": { version: "<x.y.z>", notes: "<...>" }
+#   npm:
+#     "<pkg>":   { version: "<x.y.z>", notes: "<...>" }
+#
+# Lock files (poetry.lock, Cargo.lock, pnpm-lock.yaml) are authoritative for
+# transitive deps; this file carries top-level pins that maintainers review by
+# hand. CI refuses to build if a top-level dep is absent from this file.
+#
+# M0.1 bootstrap: empty. Populated as each package lands its real deps.
+
+python: {}
+rust:   {}
+npm:    {}

@@ -1,0 +1,41 @@
+[Unit]
+Description=zik backend (P1)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=zik
+Group=zik
+ExecStart=/usr/bin/zik-backend
+Restart=on-failure
+RestartSec=2
+
+# Hardening — see masterplan §C.08.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+MemoryDenyWriteExecute=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/zik /var/cache/zik /var/log/zik
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

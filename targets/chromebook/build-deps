@@ -1,0 +1,43 @@
+# Build dependencies for target 2 (Chromebook image).
+#
+# Parsed by ../../install-build-deps.sh.
+
+# apt:
+debootstrap
+qemu-user-static
+qemu-utils
+parted
+mtools
+dosfstools
+e2fsprogs
+f2fs-tools
+zstd
+xz-utils
+squashfs-tools
+vboot-utils
+vboot-kernel-utils
+cgpt
+grub-pc-bin
+grub-efi-amd64-bin
+libpam0g-dev
+meson
+ninja-build
+pkg-config
+build-essential
+python3.11
+python3.11-venv
+python3-pip
+nodejs
+curl
+ca-certificates
+
+# pip:
+poetry
+
+# npm:
+pnpm
+
+# rustup:
+toolchain install stable
+component add rustfmt --toolchain stable
+component add clippy --toolchain stable

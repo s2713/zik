@@ -1,0 +1,34 @@
+[Unit]
+Description=zik MPRIS bridge (P3)
+PartOf=graphical-session.target
+After=zik-user-helper.service
+Wants=zik-user-helper.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/zik-mpris-bridge
+Restart=on-failure
+RestartSec=2
+
+# Hardening.
+NoNewPrivileges=true
+ProtectSystem=strict
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+RestrictAddressFamilies=AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=default.target

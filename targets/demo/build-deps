@@ -1,0 +1,30 @@
+# Build dependencies for target 1 (demo).
+#
+# Parsed by ../../install-build-deps.sh.
+# Section headers are "# <name>:". Blank lines and '#' comments are ignored.
+# Lines starting with '!' are considered optional (skipped by the installer
+# until uncommented).
+
+# apt:
+python3.11
+python3.11-venv
+python3-pip
+nodejs
+build-essential
+pkg-config
+curl
+ca-certificates
+! libpam0g-dev
+! meson
+! ninja-build
+
+# pip:
+poetry
+
+# npm:
+pnpm
+
+# rustup:
+toolchain install stable
+component add rustfmt --toolchain stable
+component add clippy --toolchain stable

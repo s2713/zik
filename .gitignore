@@ -25,12 +25,26 @@ Thumbs.db
 .vscode/
 
 # --- build / runtime artefacts ---
-/build/
-/dist/
-/node_modules/
+build/
+dist/
+node_modules/
 __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
-/.venv/
-/venv/
+.venv/
+venv/
+target/
+.vite/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+
+# --- image build artefacts ---
+*.img
+*.img.zst
+/work/
+
+# --- state files ---
+.state-install-build-deps.json
