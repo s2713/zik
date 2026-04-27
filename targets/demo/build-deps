@@ -1,3 +1,4 @@
+# shellcheck disable=SC2148  # not a shell script; parsed by install-build-deps.sh
 # Build dependencies for target 1 (demo).
 #
 # Parsed by ../../install-build-deps.sh.
@@ -10,6 +11,7 @@
 python3
 python3-venv
 python3-pip
+pipx
 # nodejs >= 18; 20+ recommended (Vite 5 / pnpm 9 work on 18, CI pins 20)
 nodejs
 build-essential
@@ -20,7 +22,7 @@ ca-certificates
 ! meson
 ! ninja-build
 
-# pip:
+# pipx:
 poetry
 
 # npm:

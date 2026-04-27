@@ -1,3 +1,4 @@
+# shellcheck disable=SC2148  # not a shell script; parsed by install-build-deps.sh
 # Build dependencies for target 2 (Chromebook image).
 #
 # Parsed by ../../install-build-deps.sh.
@@ -28,12 +29,13 @@ build-essential
 python3
 python3-venv
 python3-pip
+pipx
 # nodejs >= 18; 20+ recommended
 nodejs
 curl
 ca-certificates
 
-# pip:
+# pipx:
 poetry
 
 # npm:
