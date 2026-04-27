@@ -10,7 +10,7 @@
 #   # apt:      — system packages (Debian/Ubuntu: installed via sudo apt-get; other distros: listed as a manual-install hint)
 #   # pipx:     — Python tools installed via pipx (e.g. poetry); requires python3-pipx in apt:
 #   # pip:      — reserved; packages for pip install --user inside a pre-existing venv
-#   # npm:      — packages for pnpm add -g / npm install -g
+#   # npm:      — global JS packages installed via pnpm add -g (pnpm itself is bootstrapped automatically)
 #   # cargo:    — crates for cargo install
 #   # rustup:   — rustup subcommands (one per line, e.g. "toolchain install stable")
 # Lines beginning with '#' (other than section headers) and blank lines are ignored.
@@ -227,8 +227,10 @@ fi
 
 if ((${#NPM[@]})); then
     if ! command -v pnpm >/dev/null 2>&1; then
-        info "pnpm not found; enabling via corepack"
-        corepack enable || npm install -g pnpm
+        info "pnpm not found; installing via standalone installer"
+        curl -fsSL https://get.pnpm.io/install.sh | sh -
+        export PNPM_HOME="${PNPM_HOME:-$HOME/.local/share/pnpm}"
+        export PATH="$PNPM_HOME:$PATH"
     fi
     info "pnpm add -g"
     pnpm add -g "${!NPM[@]}"

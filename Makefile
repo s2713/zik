@@ -1,3 +1,6 @@
+# Prepend user-local tool dirs so Make works without a shell restart after install-build-deps.sh.
+export PATH := $(HOME)/.cargo/bin:$(HOME)/.local/share/pnpm:$(PATH)
+
 .PHONY: help setup dev-demo lint test clean
 
 help:
