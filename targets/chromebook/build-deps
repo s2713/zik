@@ -24,9 +24,11 @@ meson
 ninja-build
 pkg-config
 build-essential
-python3.11
-python3.11-venv
+# python3 >= 3.11 required; any newer version is fine
+python3
+python3-venv
 python3-pip
+# nodejs >= 18; 20+ recommended
 nodejs
 curl
 ca-certificates

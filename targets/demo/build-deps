@@ -6,9 +6,11 @@
 # until uncommented).
 
 # apt:
-python3.11
-python3.11-venv
+# python3 >= 3.11 required (pyproject.toml constraint); any newer version is fine
+python3
+python3-venv
 python3-pip
+# nodejs >= 18; 20+ recommended (Vite 5 / pnpm 9 work on 18, CI pins 20)
 nodejs
 build-essential
 pkg-config
