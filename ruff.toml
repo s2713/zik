@@ -13,6 +13,9 @@ select = [
 ]
 ignore = []
 
+[lint.isort]
+known-first-party = ["zik_backend", "zik_user_helper", "zik_mpris_bridge"]
+
 [format]
 quote-style = "double"
 indent-style = "space"

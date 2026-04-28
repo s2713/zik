@@ -44,6 +44,9 @@ enum Op {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    eprintln!("zik-privhelp: {:?} — not yet implemented (M0.1 skeleton)", cli.op);
+    eprintln!(
+        "zik-privhelp: {:?} — not yet implemented (M0.1 skeleton)",
+        cli.op
+    );
     ExitCode::from(2)
 }
