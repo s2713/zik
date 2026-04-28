@@ -1,1 +1,6 @@
-{}
+{
+  "health.ok":    { "en": "Backend is running.",          "fr": "Le serveur est opérationnel." },
+  "health.error": { "en": "Backend unreachable: {error}", "fr": "Serveur inaccessible : {error}" },
+  "lang.en":      { "en": "English",                      "fr": "Anglais" },
+  "lang.fr":      { "en": "French",                       "fr": "Français" }
+}

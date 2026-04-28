@@ -1,16 +1,8 @@
 import os
 
 import uvicorn
-from starlette.applications import Starlette
-from starlette.responses import JSONResponse
-from starlette.routing import Route
 
-
-async def health(_request):
-    return JSONResponse({"ok": True, "service": "zik-backend"})
-
-
-app = Starlette(routes=[Route("/api/health", health)])
+from .app import app
 
 
 def main() -> None:

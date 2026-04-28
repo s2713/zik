@@ -49,6 +49,9 @@ start() {
     PIDS+=($!)
 }
 
+# Tell the backend where to find the i18n messages file.
+export ZIK_MESSAGES_JSON="$REPO/common/frontend/src/i18n/messages.json"
+
 # Backend.
 cd "$REPO/common/backend"
 start backend poetry run zik-backend

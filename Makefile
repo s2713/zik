@@ -36,10 +36,10 @@ lint:
 
 test:
 	cd common/backend && poetry run pytest
-	cd common/user_helper && poetry run pytest
-	cd common/mpris_bridge && poetry run pytest
+	cd common/user_helper && { poetry run pytest || [ $$? -eq 5 ]; }
+	cd common/mpris_bridge && { poetry run pytest || [ $$? -eq 5 ]; }
 	cargo test --workspace
-	cd common/frontend && pnpm run test -- --passWithNoTests
+	cd common/frontend && pnpm run test
 
 clean:
 	bash targets/demo/uninstall.sh
