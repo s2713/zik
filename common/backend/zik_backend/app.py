@@ -1,6 +1,9 @@
 import json
+import logging
 import os
 import secrets
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from starlette.applications import Starlette
@@ -8,10 +11,31 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from .helper_client import HelperClient
 from .middleware import CsrfDoubleSubmitMiddleware, OriginCheckMiddleware
+
+logger = logging.getLogger(__name__)
 
 # In-memory session store — placeholder until A1 adds real auth state.
 _sessions: dict[str, dict] = {}
+
+
+@asynccontextmanager
+async def _lifespan(starlette_app: Starlette) -> AsyncGenerator[None, None]:
+    """On startup, probe the per-user helper and log its uid."""
+    socket_path = os.environ.get("ZIK_HELPER_SOCKET", "")
+    if socket_path:
+        try:
+            info = await HelperClient(socket_path).get_whoami()
+            logger.info("helper running as uid=%s (%s)", info.get("uid"), info.get("name"))
+        except FileNotFoundError:
+            # Helper socket not yet present — expected in tests and cold-start ordering.
+            logger.warning("helper socket not found: %s (helper may not be running)", socket_path)
+        except Exception as exc:
+            logger.warning("could not contact helper: %s", exc)
+    else:
+        logger.debug("ZIK_HELPER_SOCKET not set; skipping helper probe")
+    yield  # application runs here
 
 
 async def health(_request: Request) -> JSONResponse:
@@ -61,11 +85,14 @@ def make_app(
         f"http://127.0.0.1:{bp}",
         f"http://127.0.0.1:{vp}",
     })
-    starlette_app = Starlette(routes=[
-        Route("/api/health", health),
-        Route("/api/csrf-token", csrf_token),
-        Route("/api/i18n/messages", i18n_messages),
-    ])
+    starlette_app = Starlette(
+        routes=[
+            Route("/api/health", health),
+            Route("/api/csrf-token", csrf_token),
+            Route("/api/i18n/messages", i18n_messages),
+        ],
+        lifespan=_lifespan,
+    )
     # Middleware is applied outermost-last: origin check wraps csrf check wraps routes.
     starlette_app.add_middleware(CsrfDoubleSubmitMiddleware)
     starlette_app.add_middleware(OriginCheckMiddleware, allowed_origins=allowed_origins)

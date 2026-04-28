@@ -52,6 +52,9 @@ start() {
 # Tell the backend where to find the i18n messages file.
 export ZIK_MESSAGES_JSON="$REPO/common/frontend/src/i18n/messages.json"
 
+# Unix socket shared between backend (P1) and per-user helper (P2).
+export ZIK_HELPER_SOCKET="$XDG_RUNTIME_DIR/zik.sock"
+
 # Backend.
 cd "$REPO/common/backend"
 start backend poetry run zik-backend
