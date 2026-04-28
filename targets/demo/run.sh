@@ -5,6 +5,10 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 
+# Pin poetry's cache to its real location before we override XDG_CACHE_HOME below;
+# otherwise poetry looks for venvs in the demo-namespaced cache and finds nothing.
+export POETRY_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/pypoetry"
+
 # Namespace XDG so demo state cannot collide with a real install.
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/zik-demo"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/zik-demo"
