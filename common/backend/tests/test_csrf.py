@@ -28,14 +28,15 @@ async def test_csrf_mismatch_blocks_post() -> None:
     # Cookie present but header carries a different value — attacker cannot read the cookie
     # cross-origin, so a mismatch means the request is forged.
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver", cookies={_CSRF_COOKIE: _TOKEN}
+    ) as client:
         response = await client.post(
             "/api/csrf-token",
             headers={
                 "sec-fetch-site": "same-origin",
                 _CSRF_HEADER: "wrong-token",
             },
-            cookies={_CSRF_COOKIE: _TOKEN},
         )
     assert response.status_code == 403
     assert response.json() == {"error": "csrf token mismatch"}
@@ -47,13 +48,14 @@ async def test_csrf_valid_passes_middleware() -> None:
     # /api/csrf-token is GET-only so a POST returns 405, confirming the route was reached
     # (not blocked with 403 by the middleware).
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver", cookies={_CSRF_COOKIE: _TOKEN}
+    ) as client:
         response = await client.post(
             "/api/csrf-token",
             headers={
                 "sec-fetch-site": "same-origin",
                 _CSRF_HEADER: _TOKEN,
             },
-            cookies={_CSRF_COOKIE: _TOKEN},
         )
     assert response.status_code == 405
