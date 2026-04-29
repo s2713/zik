@@ -20,6 +20,8 @@ curl
 ca-certificates
 # gvfs SMB support: needed for LAN share (service-files) mount/unmount
 ! gvfs-backends
+# GIO Python bindings — used by the backend to mount SMB shares without a CLI subprocess
+! python3-gi
 ! libpam0g-dev
 ! meson
 ! ninja-build

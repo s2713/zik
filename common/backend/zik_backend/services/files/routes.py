@@ -88,14 +88,17 @@ def make_files_router(db: LibraryDB, source_manager: SourceManager) -> list:
                 cfg.get("password", ""),
             )
             if not ok:
+                logger.error("gvfs mount failed for %s: %s", source_id, err)
                 return JSONResponse({"error": f"gvfs mount failed: {err}"}, status_code=503)
             source.root = gvfs_mount_path(
                 cfg["server"], cfg["share"], cfg.get("subpath", "")
             )
+            logger.info("gvfs mount ok; root=%s", source.root)
 
         source_manager.mount(source_id)
         if not source.root or not os.path.isdir(source.root):
             source_manager.unmount(source_id)
+            logger.error("source root not accessible after mount: %s", source.root)
             return JSONResponse({"error": "source root not accessible"}, status_code=503)
 
         return JSONResponse(
