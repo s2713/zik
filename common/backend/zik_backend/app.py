@@ -17,6 +17,7 @@ from .middleware import CsrfDoubleSubmitMiddleware, OriginCheckMiddleware
 from .player import PlayerManager, state_as_dict
 from .services.files.db import LibraryDB
 from .services.files.routes import make_files_router
+from .services.files.sources import Source, SourceManager
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ def make_app(
     vite_port: int | None = None,
     files_root: str | None = None,
     db_path: str | None = None,
+    removable_root: str | None = None,
 ) -> Starlette:
     bp = backend_port or int(os.environ.get("ZIK_BACKEND_PORT", "8173"))
     vp = vite_port or int(os.environ.get("ZIK_VITE_PORT", "5173"))
@@ -79,8 +81,21 @@ def make_app(
 
     # LibraryDB is opened in lifespan and closed on shutdown.
     _files_root = files_root or os.environ.get("ZIK_FILES_ROOT", "")
+    _removable_root = removable_root or os.environ.get("ZIK_REMOVABLE_ROOT", "")
     _db_path = db_path or os.environ.get("ZIK_LIBRARY_DB", ":memory:")
     library_db = LibraryDB(_db_path)
+
+    # Build source list: internal always present; removable only when configured.
+    _sources: list[Source] = [
+        Source(id="internal", label="Internal storage",
+               root=_files_root, kind="internal", mounted=True),
+    ]
+    if _removable_root:
+        _sources.append(Source(
+            id="removable", label="Removable drive",
+            root=_removable_root, kind="removable", mounted=False,
+        ))
+    source_manager = SourceManager(_sources)
 
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> AsyncGenerator[None, None]:
@@ -134,7 +149,7 @@ def make_app(
             Route("/api/player/command", player_command, methods=["POST"]),
             Route("/api/player/state", player_state),
             WebSocketRoute("/api/ws/mpris-bridge", mpris_bridge_ws),
-            *make_files_router(library_db, _files_root),
+            *make_files_router(library_db, source_manager),
         ],
         lifespan=_lifespan,
     )

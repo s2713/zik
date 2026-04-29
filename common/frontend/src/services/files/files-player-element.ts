@@ -9,23 +9,49 @@ import { FilesPlayer, type FileTrack, type FilesPlayerState } from "./files-play
 type SortKey = "artist" | "album" | "title" | "genre" | "year";
 const SORT_KEYS: SortKey[] = ["artist", "album", "title", "genre", "year"];
 
+interface Source {
+  id: string;
+  label: string;
+  kind: string;
+  mounted: boolean;
+}
+
 /**
  * Files service player element.
- * Shows a sortable library list and a now-playing strip with seek/volume controls.
+ * Shows a sources strip (mount/unmount), a sortable library table, and a now-playing panel.
  */
 @customElement("files-player")
 export class FilesPlayerElement extends LitElement {
   static styles = css`
     :host { display: block; font-family: sans-serif; padding: 1rem; max-width: 700px; }
     h3 { margin: 0 0 0.5rem; }
-    .toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem; }
+
+    /* sources strip */
+    .sources { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem;
+               padding: 0.5rem; background: #f8f8f8; border-radius: 4px; }
+    .source { display: flex; align-items: center; gap: 0.4rem; font-size: 0.88em; }
+    .source-label { font-weight: 500; }
+    .badge { font-size: 0.75em; padding: 0.1em 0.4em; border-radius: 3px; }
+    .badge.mounted   { background: #d4edda; color: #155724; }
+    .badge.unmounted { background: #f8d7da; color: #721c24; }
+    .src-removable { font-size: 0.7em; padding: 0.1em 0.35em; border-radius: 3px;
+                     background: #fff3cd; color: #856404; vertical-align: middle; }
+
+    /* toolbar */
+    .toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
+               margin-bottom: 0.5rem; }
     .sort-label { font-size: 0.85em; color: #555; }
+
+    /* track table */
     table { width: 100%; border-collapse: collapse; font-size: 0.9em; margin-bottom: 1rem; }
     th { text-align: left; border-bottom: 2px solid #ccc; padding: 0.25rem 0.4rem; }
     td { padding: 0.2rem 0.4rem; border-bottom: 1px solid #eee; }
     tr.playing td { background: #e8f4ff; font-weight: bold; }
     tr:hover td { background: #f5f5f5; cursor: pointer; }
     .empty { color: #888; font-size: 0.9em; margin: 1rem 0; }
+    .time { font-size: 0.8em; color: #555; font-variant-numeric: tabular-nums; }
+
+    /* now-playing panel */
     .now-playing { border-top: 2px solid #ccc; padding-top: 0.75rem; }
     .np-title { font-weight: bold; margin-bottom: 0.2rem; }
     .np-sub { font-size: 0.85em; color: #555; margin-bottom: 0.4rem; }
@@ -33,7 +59,6 @@ export class FilesPlayerElement extends LitElement {
     .ctrls { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
     .vol { display: flex; align-items: center; gap: 0.5rem; }
     .vol input { width: 120px; }
-    .time { font-size: 0.8em; color: #555; font-variant-numeric: tabular-nums; }
   `;
 
   private readonly _player = new FilesPlayer();
@@ -45,10 +70,12 @@ export class FilesPlayerElement extends LitElement {
   @state() private _ps: FilesPlayerState = { ...this._player.state };
   @state() private _tracks: FileTrack[] = [];
   @state() private _sort: SortKey = "artist";
+  @state() private _sources: Source[] = [];
 
   override connectedCallback(): void {
     super.connectedCallback();
     this._player.addEventListener("statechange", this._onStateChange);
+    void this._fetchSources();
     void this._fetchTracks();
   }
 
@@ -56,6 +83,39 @@ export class FilesPlayerElement extends LitElement {
     super.disconnectedCallback();
     this._player.removeEventListener("statechange", this._onStateChange);
     this._player.stop();
+  }
+
+  // ---- source handlers ----
+
+  private async _mount(sourceId: string): Promise<void> {
+    try {
+      await fetch(`/api/files/sources/${sourceId}/mount`, {
+        method: "POST",
+        headers: { ...getCsrfHeaders() },
+      });
+      // Background scan runs server-side; wait briefly then refresh.
+      await new Promise((r) => setTimeout(r, 400));
+      await this._fetchSources();
+      await this._fetchTracks();
+    } catch { /* backend unavailable */ }
+  }
+
+  private async _unmount(sourceId: string): Promise<void> {
+    try {
+      await fetch(`/api/files/sources/${sourceId}/unmount`, {
+        method: "POST",
+        headers: { ...getCsrfHeaders() },
+      });
+      await this._fetchSources();
+      await this._fetchTracks();
+    } catch { /* backend unavailable */ }
+  }
+
+  private async _fetchSources(): Promise<void> {
+    try {
+      const r = await fetch("/api/files/sources");
+      this._sources = await r.json() as Source[];
+    } catch { /* backend unavailable */ }
   }
 
   // ---- control handlers ----
@@ -97,8 +157,7 @@ export class FilesPlayerElement extends LitElement {
         method: "POST",
         headers: { ...getCsrfHeaders() },
       });
-      // Small delay so the background task can finish before we re-fetch.
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 400));
       await this._fetchTracks();
     } catch { /* backend unavailable */ }
   }
@@ -154,6 +213,29 @@ export class FilesPlayerElement extends LitElement {
     return html`
       <h3>${t("service.files")}</h3>
 
+      <!-- sources strip -->
+      ${this._sources.length > 0 ? html`
+        <div class="sources">
+          <strong style="font-size:0.88em">${t("files.sources")}:</strong>
+          ${this._sources.map((src) => html`
+            <div class="source">
+              <span class="source-label">${src.label}</span>
+              <span class="badge ${src.mounted ? "mounted" : "unmounted"}">
+                ${src.mounted ? t("files.mounted") : t("files.unmounted")}
+              </span>
+              ${src.kind === "removable" ? html`
+                <button @click=${src.mounted
+                  ? () => void this._unmount(src.id)
+                  : () => void this._mount(src.id)}>
+                  ${src.mounted ? t("files.unmount") : t("files.mount")}
+                </button>
+              ` : nothing}
+            </div>
+          `)}
+        </div>
+      ` : nothing}
+
+      <!-- sort toolbar -->
       <div class="toolbar">
         <button @click=${this._scan}>${t("files.scan")}</button>
         <span class="sort-label">${t("files.sort.artist")}:</span>
@@ -164,6 +246,7 @@ export class FilesPlayerElement extends LitElement {
         `)}
       </div>
 
+      <!-- track list -->
       ${this._tracks.length === 0
         ? html`<p class="empty">${t("files.no-tracks")}</p>`
         : html`
@@ -183,7 +266,12 @@ export class FilesPlayerElement extends LitElement {
                 return html`
                   <tr class=${isCurrent && active ? "playing" : ""}
                       @click=${() => this._playTrack(tr)}>
-                    <td>${tr.title}</td>
+                    <td>
+                      ${tr.title}
+                      ${(tr as unknown as Record<string, string>)["source_id"] === "removable"
+                        ? html`<span class="src-removable">${t("files.source.removable")}</span>`
+                        : nothing}
+                    </td>
                     <td>${tr.artist}</td>
                     <td>${tr.album}</td>
                     <td>${tr.year ?? ""}</td>
@@ -195,6 +283,7 @@ export class FilesPlayerElement extends LitElement {
           </table>
         `}
 
+      <!-- now-playing panel -->
       ${active ? html`
         <div class="now-playing">
           <div class="np-title">${t("files.now-playing")}: ${ps.track?.title ?? ""}</div>

@@ -1,5 +1,6 @@
-"""Tests for the files service: scan, list, sort, audio stream."""
+"""Tests for the files service: scan, list, sort, audio stream, sources."""
 
+import asyncio
 import os
 import tempfile
 
@@ -34,7 +35,7 @@ def _write_mp3(path: str, title: str, artist: str, album: str) -> None:
 
 @pytest.fixture()
 def music_dir():
-    """Temporary directory containing 3 tagged MP3 stubs."""
+    """Temporary directory containing 3 tagged MP3 stubs (internal source)."""
     with tempfile.TemporaryDirectory() as d:
         _write_mp3(os.path.join(d, "a.mp3"), "Alpha", "Artist A", "Album X")
         _write_mp3(os.path.join(d, "b.mp3"), "Beta",  "Artist B", "Album Y")
@@ -42,9 +43,22 @@ def music_dir():
         yield d
 
 
-def _client(files_root: str, db_path: str = ":memory:") -> httpx.AsyncClient:
-    """Build a test client wired to a fresh app with the given files root."""
-    app = make_app(files_root=files_root, db_path=db_path)
+@pytest.fixture()
+def removable_dir():
+    """Temporary directory with 2 MP3 stubs simulating a removable drive."""
+    with tempfile.TemporaryDirectory() as d:
+        _write_mp3(os.path.join(d, "r1.mp3"), "RemA", "Artist R", "Album R")
+        _write_mp3(os.path.join(d, "r2.mp3"), "RemB", "Artist R", "Album R")
+        yield d
+
+
+def _client(
+    files_root: str,
+    db_path: str = ":memory:",
+    removable_root: str = "",
+) -> httpx.AsyncClient:
+    """Build a test client wired to a fresh app with the given roots."""
+    app = make_app(files_root=files_root, db_path=db_path, removable_root=removable_root)
     return httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
@@ -52,14 +66,14 @@ def _client(files_root: str, db_path: str = ":memory:") -> httpx.AsyncClient:
     )
 
 
+# ---- existing M2 tests (unchanged behaviour) ----
+
 @pytest.mark.asyncio
 async def test_scan_populates_library(music_dir: str) -> None:
     # After a scan, list_tracks must return exactly 3 entries.
     async with _client(music_dir) as client:
         r = await client.post("/api/files/scan", headers=_POST_HEADERS)
         assert r.status_code == 200
-        # Background task runs immediately in-process; give it a tick.
-        import asyncio
         await asyncio.sleep(0.1)
         tracks = (await client.get("/api/files/tracks")).json()
     assert len(tracks) == 3
@@ -72,7 +86,6 @@ async def test_sort_by_title(music_dir: str) -> None:
     # Tracks sorted by title must come back in alphabetical order.
     async with _client(music_dir) as client:
         await client.post("/api/files/scan", headers=_POST_HEADERS)
-        import asyncio
         await asyncio.sleep(0.1)
         tracks = (await client.get("/api/files/tracks?sort=title")).json()
     assert [t["title"] for t in tracks] == ["Alpha", "Beta", "Gamma"]
@@ -83,7 +96,6 @@ async def test_sort_by_album(music_dir: str) -> None:
     # Tracks sorted by album: Album X tracks first, then Album Y.
     async with _client(music_dir) as client:
         await client.post("/api/files/scan", headers=_POST_HEADERS)
-        import asyncio
         await asyncio.sleep(0.1)
         tracks = (await client.get("/api/files/tracks?sort=album")).json()
     albums = [t["album"] for t in tracks]
@@ -95,7 +107,6 @@ async def test_audio_route_returns_file(music_dir: str) -> None:
     # Audio route must return 200 and the file bytes for a known track.
     async with _client(music_dir) as client:
         await client.post("/api/files/scan", headers=_POST_HEADERS)
-        import asyncio
         await asyncio.sleep(0.1)
         tracks = (await client.get("/api/files/tracks")).json()
         first_id = tracks[0]["id"]
@@ -117,3 +128,66 @@ async def test_scan_no_root() -> None:
     async with _client("") as client:
         r = await client.post("/api/files/scan", headers=_POST_HEADERS)
     assert r.status_code == 503
+
+
+# ---- M3 source tests ----
+
+@pytest.mark.asyncio
+async def test_sources_list(music_dir: str, removable_dir: str) -> None:
+    # With both roots configured, sources endpoint must list internal + removable.
+    async with _client(music_dir, removable_root=removable_dir) as client:
+        sources = (await client.get("/api/files/sources")).json()
+    assert len(sources) == 2
+    ids = {s["id"] for s in sources}
+    assert ids == {"internal", "removable"}
+    mounted = {s["id"]: s["mounted"] for s in sources}
+    assert mounted["internal"] is True
+    assert mounted["removable"] is False
+
+
+@pytest.mark.asyncio
+async def test_mount_adds_removable_tracks(music_dir: str, removable_dir: str) -> None:
+    # Mounting the removable source must add its 2 tracks alongside the 3 internal ones.
+    async with _client(music_dir, removable_root=removable_dir) as client:
+        # Scan internal.
+        await client.post("/api/files/scan", headers=_POST_HEADERS)
+        await asyncio.sleep(0.1)
+        before = (await client.get("/api/files/tracks")).json()
+        assert len(before) == 3
+
+        # Mount removable (triggers background scan).
+        r = await client.post(
+            "/api/files/sources/removable/mount", headers=_POST_HEADERS
+        )
+        assert r.status_code == 200
+        assert r.json()["source"]["mounted"] is True
+        await asyncio.sleep(0.1)
+
+        after = (await client.get("/api/files/tracks")).json()
+    assert len(after) == 5
+    source_ids = {t["source_id"] for t in after}
+    assert source_ids == {"internal", "removable"}
+
+
+@pytest.mark.asyncio
+async def test_unmount_removes_removable_tracks(music_dir: str, removable_dir: str) -> None:
+    # Unmounting the removable source must remove its tracks; internal tracks stay.
+    async with _client(music_dir, removable_root=removable_dir) as client:
+        # Populate both sources.
+        await client.post("/api/files/scan", headers=_POST_HEADERS)
+        await client.post(
+            "/api/files/sources/removable/mount", headers=_POST_HEADERS
+        )
+        await asyncio.sleep(0.1)
+        assert len((await client.get("/api/files/tracks")).json()) == 5
+
+        # Unmount.
+        r = await client.post(
+            "/api/files/sources/removable/unmount", headers=_POST_HEADERS
+        )
+        assert r.status_code == 200
+        assert r.json()["source"]["mounted"] is False
+
+        remaining = (await client.get("/api/files/tracks")).json()
+    assert len(remaining) == 3
+    assert all(t["source_id"] == "internal" for t in remaining)

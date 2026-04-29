@@ -59,6 +59,10 @@ export ZIK_FILES_ROOT="${ZIK_FILES_ROOT:-$HOME/Music}"
 # SQLite library index (persisted across demo restarts).
 export ZIK_LIBRARY_DB="$XDG_DATA_HOME/library.db"
 
+# Optional removable-drive simulation: point to any directory to test mount/unmount.
+# Example: ZIK_REMOVABLE_ROOT=~/usb-music ./targets/demo/run.sh
+export ZIK_REMOVABLE_ROOT="${ZIK_REMOVABLE_ROOT:-}"
+
 # Unix socket shared between backend (P1) and per-user helper (P2).
 export ZIK_HELPER_SOCKET="$XDG_RUNTIME_DIR/zik.sock"
 

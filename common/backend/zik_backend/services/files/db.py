@@ -1,5 +1,7 @@
 """SQLite library index for the files service (aiosqlite, WAL mode)."""
 
+import contextlib
+
 import aiosqlite
 
 _SCHEMA = """
@@ -13,7 +15,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     track_number INTEGER,
     year         INTEGER,
     duration     REAL NOT NULL DEFAULT 0.0,
-    mtime        REAL NOT NULL DEFAULT 0.0
+    mtime        REAL NOT NULL DEFAULT 0.0,
+    source_id    TEXT NOT NULL DEFAULT 'internal'
 );
 """
 
@@ -35,11 +38,17 @@ class LibraryDB:
         return self._db  # type: ignore[return-value]
 
     async def open(self) -> None:
-        """Open the connection and apply WAL mode + schema."""
+        """Open the connection, apply WAL mode, create schema, run migrations."""
         self._db = await aiosqlite.connect(self._path)
         self._db.row_factory = aiosqlite.Row
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.executescript(_SCHEMA)
+        # Migration: add source_id to databases created before M3.
+        with contextlib.suppress(aiosqlite.OperationalError):
+            await self._db.execute(
+                "ALTER TABLE tracks ADD COLUMN"
+                " source_id TEXT NOT NULL DEFAULT 'internal'"
+            )
         await self._db.commit()
 
     async def close(self) -> None:
@@ -49,37 +58,44 @@ class LibraryDB:
             self._db = None
 
     async def upsert_track(self, row: dict) -> None:
-        """Insert or replace one track row."""
+        """Insert or replace one track row (row must include source_id)."""
         db = await self._ensure_open()
         await db.execute(
             """
             INSERT INTO tracks
                 (id, path, title, artist, album, genre,
-                 track_number, year, duration, mtime)
+                 track_number, year, duration, mtime, source_id)
             VALUES
                 (:id, :path, :title, :artist, :album, :genre,
-                 :track_number, :year, :duration, :mtime)
+                 :track_number, :year, :duration, :mtime, :source_id)
             ON CONFLICT(id) DO UPDATE SET
                 path=excluded.path, title=excluded.title,
                 artist=excluded.artist, album=excluded.album,
                 genre=excluded.genre, track_number=excluded.track_number,
                 year=excluded.year, duration=excluded.duration,
-                mtime=excluded.mtime
+                mtime=excluded.mtime, source_id=excluded.source_id
             """,
             row,
         )
 
-    async def delete_stale(self, live_ids: set[str]) -> None:
-        """Remove tracks whose ids are no longer in the scanned set."""
+    async def delete_stale_for_source(self, source_id: str, live_ids: set[str]) -> None:
+        """Remove tracks belonging to source_id that are no longer in live_ids."""
         db = await self._ensure_open()
         if not live_ids:
-            await db.execute("DELETE FROM tracks")
+            await db.execute("DELETE FROM tracks WHERE source_id = ?", (source_id,))
         else:
             placeholders = ",".join("?" * len(live_ids))
             await db.execute(
-                f"DELETE FROM tracks WHERE id NOT IN ({placeholders})",
-                tuple(live_ids),
+                f"DELETE FROM tracks WHERE source_id = ?"
+                f" AND id NOT IN ({placeholders})",
+                (source_id, *live_ids),
             )
+        await db.commit()
+
+    async def delete_by_source(self, source_id: str) -> None:
+        """Remove all tracks belonging to source_id (used on unmount)."""
+        db = await self._ensure_open()
+        await db.execute("DELETE FROM tracks WHERE source_id = ?", (source_id,))
         await db.commit()
 
     async def commit(self) -> None:
