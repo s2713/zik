@@ -18,6 +18,8 @@ build-essential
 pkg-config
 curl
 ca-certificates
+# gvfs SMB support: needed for LAN share (service-files) mount/unmount
+! gvfs-backends
 ! libpam0g-dev
 ! meson
 ! ninja-build

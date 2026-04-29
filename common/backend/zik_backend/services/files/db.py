@@ -5,6 +5,17 @@ import contextlib
 import aiosqlite
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS lan_sources (
+    id       TEXT PRIMARY KEY,
+    label    TEXT NOT NULL,
+    kind     TEXT NOT NULL DEFAULT 'smb',
+    server   TEXT NOT NULL,
+    share    TEXT NOT NULL,
+    subpath  TEXT NOT NULL DEFAULT '',
+    username TEXT NOT NULL DEFAULT '',
+    password TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS tracks (
     id           TEXT PRIMARY KEY,
     path         TEXT NOT NULL UNIQUE,
@@ -123,3 +134,37 @@ class LibraryDB:
         ) as cursor:
             row = await cursor.fetchone()
         return dict(row) if row else None
+
+    # --- LAN source persistence ---
+
+    async def add_lan_source(self, row: dict) -> None:
+        """Insert or replace a LAN source row."""
+        db = await self._ensure_open()
+        await db.execute(
+            """
+            INSERT INTO lan_sources
+                (id, label, kind, server, share, subpath, username, password)
+            VALUES
+                (:id, :label, :kind, :server, :share, :subpath, :username, :password)
+            ON CONFLICT(id) DO UPDATE SET
+                label=excluded.label, kind=excluded.kind,
+                server=excluded.server, share=excluded.share,
+                subpath=excluded.subpath, username=excluded.username,
+                password=excluded.password
+            """,
+            row,
+        )
+        await db.commit()
+
+    async def remove_lan_source(self, source_id: str) -> None:
+        """Delete a LAN source row by id."""
+        db = await self._ensure_open()
+        await db.execute("DELETE FROM lan_sources WHERE id = ?", (source_id,))
+        await db.commit()
+
+    async def list_lan_sources(self) -> list[dict]:
+        """Return all persisted LAN sources."""
+        db = await self._ensure_open()
+        async with db.execute("SELECT * FROM lan_sources") as cursor:
+            rows = await cursor.fetchall()
+        return [dict(r) for r in rows]

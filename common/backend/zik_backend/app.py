@@ -99,8 +99,25 @@ def make_app(
 
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> AsyncGenerator[None, None]:
-        """Open DB, probe helper, then yield; close DB on shutdown."""
+        """Open DB, load persisted LAN sources, probe helper, then yield; close on shutdown."""
         await library_db.open()
+
+        # Restore any LAN sources persisted from previous sessions.
+        for row in await library_db.list_lan_sources():
+            source_manager.add_source(Source(
+                id=row["id"],
+                label=row["label"],
+                root="",  # filled in when mounted
+                kind=row["kind"],
+                mounted=False,
+                config={
+                    "server": row["server"],
+                    "share": row["share"],
+                    "subpath": row["subpath"],
+                    "username": row["username"],
+                    "password": row["password"],
+                },
+            ))
 
         socket_path = os.environ.get("ZIK_HELPER_SOCKET", "")
         if socket_path:

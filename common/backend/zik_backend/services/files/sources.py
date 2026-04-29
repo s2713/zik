@@ -1,20 +1,25 @@
 """Source registry: named roots that can be independently mounted/unmounted."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 
 @dataclass
 class Source:
-    """A named audio file root (internal storage, removable drive, etc.)."""
-    id: str       # stable identifier, e.g. "internal" or "removable"
+    """A named audio file root (internal storage, removable drive, SMB share, etc.)."""
+    id: str       # stable identifier, e.g. "internal", "removable", or a uuid
     label: str    # human-readable display name
-    root: str     # filesystem path
-    kind: str     # "internal" | "removable"
+    root: str     # local filesystem path (for SMB: the gvfs mount point)
+    kind: str     # "internal" | "removable" | "smb"
     mounted: bool # whether currently active / visible in the library
+    # kind-specific config; passwords are excluded from API responses (see as_dict).
+    config: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
-        """Serialise to a plain dict for JSON responses."""
-        return asdict(self)
+        """Serialise to a plain dict for JSON responses (password redacted)."""
+        d = asdict(self)
+        if d.get("config"):
+            d["config"] = {k: v for k, v in d["config"].items() if k != "password"}
+        return d
 
 
 class SourceManager:
@@ -31,6 +36,14 @@ class SourceManager:
     def get(self, source_id: str) -> Source | None:
         """Return the source with the given id, or None."""
         return self._sources.get(source_id)
+
+    def add_source(self, source: Source) -> None:
+        """Add a new source (e.g. a persisted LAN share loaded at startup)."""
+        self._sources[source.id] = source
+
+    def remove_source(self, source_id: str) -> Source | None:
+        """Remove and return a source, or None if not found."""
+        return self._sources.pop(source_id, None)
 
     def mount(self, source_id: str) -> Source | None:
         """Mark source as mounted and return it, or None if unknown."""

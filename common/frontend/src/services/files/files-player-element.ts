@@ -14,11 +14,21 @@ interface Source {
   label: string;
   kind: string;
   mounted: boolean;
+  config?: Record<string, string>;
+}
+
+interface LanForm {
+  label: string;
+  server: string;
+  share: string;
+  subpath: string;
+  username: string;
+  password: string;
 }
 
 /**
  * Files service player element.
- * Shows a sources strip (mount/unmount), a sortable library table, and a now-playing panel.
+ * Shows a sources strip (mount/unmount/add LAN), a sortable library table, and a now-playing panel.
  */
 @customElement("files-player")
 export class FilesPlayerElement extends LitElement {
@@ -27,7 +37,7 @@ export class FilesPlayerElement extends LitElement {
     h3 { margin: 0 0 0.5rem; }
 
     /* sources strip */
-    .sources { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem;
+    .sources { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.4rem;
                padding: 0.5rem; background: #f8f8f8; border-radius: 4px; }
     .source { display: flex; align-items: center; gap: 0.4rem; font-size: 0.88em; }
     .source-label { font-weight: 500; }
@@ -36,6 +46,18 @@ export class FilesPlayerElement extends LitElement {
     .badge.unmounted { background: #f8d7da; color: #721c24; }
     .src-removable { font-size: 0.7em; padding: 0.1em 0.35em; border-radius: 3px;
                      background: #fff3cd; color: #856404; vertical-align: middle; }
+    .src-smb { font-size: 0.7em; padding: 0.1em 0.35em; border-radius: 3px;
+               background: #cce5ff; color: #004085; vertical-align: middle; }
+    .add-lan-btn { font-size: 0.8em; }
+
+    /* add-LAN form */
+    .lan-form { background: #f0f8ff; border: 1px solid #b8d4f0; border-radius: 4px;
+                padding: 0.75rem; margin-bottom: 0.75rem; }
+    .lan-form h4 { margin: 0 0 0.5rem; font-size: 0.9em; }
+    .lan-form .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 0.75rem; }
+    .lan-form label { display: flex; flex-direction: column; font-size: 0.82em; gap: 0.15rem; }
+    .lan-form input { font-size: 0.9em; padding: 0.2em 0.3em; border: 1px solid #bbb; border-radius: 3px; }
+    .lan-form .form-actions { margin-top: 0.5rem; display: flex; gap: 0.4rem; }
 
     /* toolbar */
     .toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
@@ -71,6 +93,10 @@ export class FilesPlayerElement extends LitElement {
   @state() private _tracks: FileTrack[] = [];
   @state() private _sort: SortKey = "artist";
   @state() private _sources: Source[] = [];
+  @state() private _showAddLan = false;
+  @state() private _lanForm: LanForm = {
+    label: "", server: "", share: "", subpath: "", username: "", password: "",
+  };
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -104,6 +130,36 @@ export class FilesPlayerElement extends LitElement {
     try {
       await fetch(`/api/files/sources/${sourceId}/unmount`, {
         method: "POST",
+        headers: { ...getCsrfHeaders() },
+      });
+      await this._fetchSources();
+      await this._fetchTracks();
+    } catch { /* backend unavailable */ }
+  }
+
+  private async _addLanSource(): Promise<void> {
+    const f = this._lanForm;
+    try {
+      const r = await fetch("/api/files/lan", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({
+          label: f.label, server: f.server, share: f.share,
+          subpath: f.subpath, username: f.username, password: f.password,
+        }),
+      });
+      if (r.ok) {
+        this._showAddLan = false;
+        this._lanForm = { label: "", server: "", share: "", subpath: "", username: "", password: "" };
+        await this._fetchSources();
+      }
+    } catch { /* backend unavailable */ }
+  }
+
+  private async _removeLanSource(sourceId: string): Promise<void> {
+    try {
+      await fetch(`/api/files/lan/${sourceId}`, {
+        method: "DELETE",
         headers: { ...getCsrfHeaders() },
       });
       await this._fetchSources();
@@ -203,7 +259,26 @@ export class FilesPlayerElement extends LitElement {
     return `${m}:${s}`;
   }
 
+  private _sourceKind(sourceId: string): string {
+    return this._sources.find((s) => s.id === sourceId)?.kind ?? "";
+  }
+
+  private _setLanField(field: keyof LanForm, value: string): void {
+    this._lanForm = { ...this._lanForm, [field]: value };
+  }
+
   // ---- rendering ----
+
+  private _renderSourceBadge(sourceId: string) {
+    const kind = this._sourceKind(sourceId);
+    if (kind === "removable") {
+      return html`<span class="src-removable">${t("files.source.removable")}</span>`;
+    }
+    if (kind === "smb") {
+      return html`<span class="src-smb">${t("files.source.smb")}</span>`;
+    }
+    return nothing;
+  }
 
   override render() {
     const ps = this._ps;
@@ -223,15 +298,67 @@ export class FilesPlayerElement extends LitElement {
               <span class="badge ${src.mounted ? "mounted" : "unmounted"}">
                 ${src.mounted ? t("files.mounted") : t("files.unmounted")}
               </span>
-              ${src.kind === "removable" ? html`
+              ${src.kind === "removable" || src.kind === "smb" ? html`
                 <button @click=${src.mounted
                   ? () => void this._unmount(src.id)
                   : () => void this._mount(src.id)}>
                   ${src.mounted ? t("files.unmount") : t("files.mount")}
                 </button>
               ` : nothing}
+              ${src.kind === "smb" ? html`
+                <button @click=${() => void this._removeLanSource(src.id)}>
+                  ${t("files.lan.remove")}
+                </button>
+              ` : nothing}
             </div>
           `)}
+          <button class="add-lan-btn"
+                  @click=${() => { this._showAddLan = !this._showAddLan; }}>
+            ${t("files.lan.add")}
+          </button>
+        </div>
+      ` : nothing}
+
+      <!-- add-LAN form (collapsible) -->
+      ${this._showAddLan ? html`
+        <div class="lan-form">
+          <h4>${t("files.lan.add")}</h4>
+          <div class="fields">
+            <label>
+              ${t("files.lan.label")}
+              <input type="text" .value=${this._lanForm.label}
+                     @input=${(e: Event) => this._setLanField("label", (e.target as HTMLInputElement).value)} />
+            </label>
+            <label>
+              ${t("files.lan.server")}
+              <input type="text" .value=${this._lanForm.server}
+                     @input=${(e: Event) => this._setLanField("server", (e.target as HTMLInputElement).value)} />
+            </label>
+            <label>
+              ${t("files.lan.share")}
+              <input type="text" .value=${this._lanForm.share}
+                     @input=${(e: Event) => this._setLanField("share", (e.target as HTMLInputElement).value)} />
+            </label>
+            <label>
+              ${t("files.lan.subpath")}
+              <input type="text" .value=${this._lanForm.subpath}
+                     @input=${(e: Event) => this._setLanField("subpath", (e.target as HTMLInputElement).value)} />
+            </label>
+            <label>
+              ${t("files.lan.username")}
+              <input type="text" autocomplete="username" .value=${this._lanForm.username}
+                     @input=${(e: Event) => this._setLanField("username", (e.target as HTMLInputElement).value)} />
+            </label>
+            <label>
+              ${t("files.lan.password")}
+              <input type="password" autocomplete="current-password" .value=${this._lanForm.password}
+                     @input=${(e: Event) => this._setLanField("password", (e.target as HTMLInputElement).value)} />
+            </label>
+          </div>
+          <div class="form-actions">
+            <button @click=${() => void this._addLanSource()}>${t("files.lan.submit")}</button>
+            <button @click=${() => { this._showAddLan = false; }}>${t("files.lan.cancel")}</button>
+          </div>
         </div>
       ` : nothing}
 
@@ -263,14 +390,13 @@ export class FilesPlayerElement extends LitElement {
             <tbody>
               ${this._tracks.map((tr) => {
                 const isCurrent = ps.track?.id === tr.id;
+                const sid = (tr as unknown as Record<string, string>)["source_id"];
                 return html`
                   <tr class=${isCurrent && active ? "playing" : ""}
                       @click=${() => this._playTrack(tr)}>
                     <td>
                       ${tr.title}
-                      ${(tr as unknown as Record<string, string>)["source_id"] === "removable"
-                        ? html`<span class="src-removable">${t("files.source.removable")}</span>`
-                        : nothing}
+                      ${this._renderSourceBadge(sid)}
                     </td>
                     <td>${tr.artist}</td>
                     <td>${tr.album}</td>

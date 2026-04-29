@@ -25,5 +25,16 @@
   "files.mount":             { "en": "Mount",                        "fr": "Monter" },
   "files.unmount":           { "en": "Unmount",                      "fr": "Démonter" },
   "files.mounted":           { "en": "mounted",                      "fr": "monté" },
-  "files.unmounted":         { "en": "unmounted",                    "fr": "démonté" }
+  "files.unmounted":         { "en": "unmounted",                    "fr": "démonté" },
+  "files.lan.add":           { "en": "Add SMB share",                "fr": "Ajouter un partage SMB" },
+  "files.lan.label":         { "en": "Label",                        "fr": "Libellé" },
+  "files.lan.server":        { "en": "Server",                       "fr": "Serveur" },
+  "files.lan.share":         { "en": "Share",                        "fr": "Partage" },
+  "files.lan.subpath":       { "en": "Subpath (optional)",           "fr": "Sous-chemin (optionnel)" },
+  "files.lan.username":      { "en": "Username",                     "fr": "Utilisateur" },
+  "files.lan.password":      { "en": "Password",                     "fr": "Mot de passe" },
+  "files.lan.submit":        { "en": "Add",                          "fr": "Ajouter" },
+  "files.lan.cancel":        { "en": "Cancel",                       "fr": "Annuler" },
+  "files.lan.remove":        { "en": "Remove",                       "fr": "Supprimer" },
+  "files.source.smb":        { "en": "LAN",                          "fr": "Réseau" }
 }
