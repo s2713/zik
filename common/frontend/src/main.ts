@@ -1,3 +1,4 @@
+import { ensureCsrfToken } from "./csrf.js";
 import {
   SUPPORTED_LANGS,
   getLanguage,
@@ -5,10 +6,14 @@ import {
   setLanguage,
   t,
 } from "./i18n/i18n.js";
+import "./services/demo/demo-player-element.js";  // registers <demo-player>
+import "./services/files/files-player-element.js"; // registers <files-player>
 
 async function init(): Promise<void> {
   await loadMessages();
+  await ensureCsrfToken(); // fetch CSRF cookie before any POST
   renderLanguagePicker();
+  mountPlayer();
   await checkHealth();
 }
 
@@ -31,6 +36,14 @@ function renderLanguagePicker(): void {
     });
     bar.appendChild(btn);
   }
+}
+
+function mountPlayer(): void {
+  // Append each service element once; idempotent if called again.
+  if (!document.querySelector("demo-player"))
+    document.body.appendChild(document.createElement("demo-player"));
+  if (!document.querySelector("files-player"))
+    document.body.appendChild(document.createElement("files-player"));
 }
 
 async function checkHealth(): Promise<void> {

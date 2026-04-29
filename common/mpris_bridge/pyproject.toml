@@ -10,6 +10,7 @@ packages = [{ include = "zik_mpris_bridge" }]
 [tool.poetry.dependencies]
 python = "^3.11"
 dasbus = "^1.7"
+websockets = ">=13.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"

@@ -52,8 +52,18 @@ start() {
 # Tell the backend where to find the i18n messages file.
 export ZIK_MESSAGES_JSON="$REPO/common/frontend/src/i18n/messages.json"
 
+# Root directory scanned for audio files by the files service.
+# Override with e.g. ZIK_FILES_ROOT=/path/to/music ./targets/demo/run.sh
+export ZIK_FILES_ROOT="${ZIK_FILES_ROOT:-$HOME/Music}"
+
+# SQLite library index (persisted across demo restarts).
+export ZIK_LIBRARY_DB="$XDG_DATA_HOME/library.db"
+
 # Unix socket shared between backend (P1) and per-user helper (P2).
 export ZIK_HELPER_SOCKET="$XDG_RUNTIME_DIR/zik.sock"
+
+# WebSocket URL for the MPRIS bridge (P3) to reach the backend (P1).
+export ZIK_BACKEND_URL="ws://127.0.0.1:8173"
 
 # Backend.
 cd "$REPO/common/backend"
@@ -63,7 +73,7 @@ start backend poetry run zik-backend
 cd "$REPO/common/user_helper"
 start user-helper poetry run zik-user-helper
 
-# MPRIS bridge (idle stub for M0.1).
+# MPRIS bridge — connects to backend WS and logs playback events.
 cd "$REPO/common/mpris_bridge"
 start mpris-bridge poetry run zik-mpris-bridge
 
