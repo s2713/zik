@@ -16,6 +16,11 @@ CREATE TABLE IF NOT EXISTS lan_sources (
     password TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS tracks (
     id           TEXT PRIMARY KEY,
     path         TEXT NOT NULL UNIQUE,
@@ -168,3 +173,24 @@ class LibraryDB:
         async with db.execute("SELECT * FROM lan_sources") as cursor:
             rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+    # --- generic key-value settings ---
+
+    async def get_setting(self, key: str) -> str | None:
+        """Return a setting value by key, or None if not set."""
+        db = await self._ensure_open()
+        async with db.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return row["value"] if row else None
+
+    async def set_setting(self, key: str, value: str) -> None:
+        """Upsert a setting key-value pair."""
+        db = await self._ensure_open()
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
+        await db.commit()

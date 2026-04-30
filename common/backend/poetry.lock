@@ -368,6 +368,21 @@ files = [
 cli = ["click (>=5.0)"]
 
 [[package]]
+name = "python-mpd2"
+version = "3.1.1"
+description = "A Python MPD client library"
+optional = false
+python-versions = ">=3.6"
+groups = ["main"]
+files = [
+    {file = "python-mpd2-3.1.1.tar.gz", hash = "sha256:4baec3584cc43ed9948d5559079fafc2679b06b2ade273e909b3582654b2b3f5"},
+    {file = "python_mpd2-3.1.1-py2.py3-none-any.whl", hash = "sha256:86bf1100a0b135959d74a9a7a58cf0515bf30bb54eb25ae6fb8e175e50300fc3"},
+]
+
+[package.extras]
+twisted = ["Twisted"]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.3"
 description = "YAML parser and emitter for Python"
@@ -808,4 +823,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "8511a404984b566a009b735129fe62def4d3dba3130d9ed3cd0cf81ee88854de"
+content-hash = "f35d11e1630a9e7aeabac407423904fbd6ff5d7d6707fdd182235cd710b7ea4a"

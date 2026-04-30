@@ -18,8 +18,22 @@ from .player import PlayerManager, state_as_dict
 from .services.files.db import LibraryDB
 from .services.files.routes import make_files_router
 from .services.files.sources import Source, SourceManager
+from .services.mpd.client import MpdProxy
+from .services.mpd.routes import make_mpd_router
 
 logger = logging.getLogger(__name__)
+
+
+class _SuppressPath(logging.Filter):
+    """Drop uvicorn access-log records whose message contains any of the given paths."""
+    def __init__(self, *paths: str) -> None:
+        super().__init__()
+        self._paths = paths
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not any(p in msg for p in self._paths)
+
 
 # In-memory session store — placeholder until A1 adds real auth state.
 _sessions: dict[str, dict] = {}
@@ -69,6 +83,9 @@ def make_app(
     db_path: str | None = None,
     removable_root: str | None = None,
 ) -> Starlette:
+    # Suppress high-frequency status polls from the access log.
+    logging.getLogger("uvicorn.access").addFilter(_SuppressPath("/api/mpd/status"))
+
     bp = backend_port or int(os.environ.get("ZIK_BACKEND_PORT", "8173"))
     vp = vite_port or int(os.environ.get("ZIK_VITE_PORT", "5173"))
     allowed_origins: frozenset[str] = frozenset({
@@ -96,10 +113,11 @@ def make_app(
             root=_removable_root, kind="removable", mounted=False,
         ))
     source_manager = SourceManager(_sources)
+    mpd_proxy = MpdProxy()
 
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> AsyncGenerator[None, None]:
-        """Open DB, load persisted LAN sources, probe helper, then yield; close on shutdown."""
+        """Open DB, load persisted config, probe helper, then yield; close on shutdown."""
         await library_db.open()
 
         # Restore any LAN sources persisted from previous sessions.
@@ -118,6 +136,17 @@ def make_app(
                     "password": row["password"],
                 },
             ))
+
+        # Reconnect to MPD if config was saved in a previous session.
+        mpd_host = await library_db.get_setting("mpd.host")
+        if mpd_host:
+            mpd_port = int(await library_db.get_setting("mpd.port") or "6600")
+            mpd_pass = await library_db.get_setting("mpd.password") or ""
+            mpd_stream = await library_db.get_setting("mpd.stream_url") or ""
+            try:
+                await mpd_proxy.connect(mpd_host, mpd_port, mpd_pass, mpd_stream)
+            except Exception as exc:
+                logger.warning("mpd: auto-reconnect failed: %s", exc)
 
         socket_path = os.environ.get("ZIK_HELPER_SOCKET", "")
         if socket_path:
@@ -167,6 +196,7 @@ def make_app(
             Route("/api/player/state", player_state),
             WebSocketRoute("/api/ws/mpris-bridge", mpris_bridge_ws),
             *make_files_router(library_db, source_manager),
+            *make_mpd_router(mpd_proxy, library_db),
         ],
         lifespan=_lifespan,
     )

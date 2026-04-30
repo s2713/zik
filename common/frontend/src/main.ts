@@ -8,6 +8,7 @@ import {
 } from "./i18n/i18n.js";
 import "./services/demo/demo-player-element.js";  // registers <demo-player>
 import "./services/files/files-player-element.js"; // registers <files-player>
+import "./services/mpd/mpd-player-element.js";     // registers <mpd-player>
 
 async function init(): Promise<void> {
   await loadMessages();
@@ -44,6 +45,8 @@ function mountPlayer(): void {
     document.body.appendChild(document.createElement("demo-player"));
   if (!document.querySelector("files-player"))
     document.body.appendChild(document.createElement("files-player"));
+  if (!document.querySelector("mpd-player"))
+    document.body.appendChild(document.createElement("mpd-player"));
 }
 
 async function checkHealth(): Promise<void> {

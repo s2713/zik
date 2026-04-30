@@ -36,5 +36,22 @@
   "files.lan.submit":        { "en": "Add",                          "fr": "Ajouter" },
   "files.lan.cancel":        { "en": "Cancel",                       "fr": "Annuler" },
   "files.lan.remove":        { "en": "Remove",                       "fr": "Supprimer" },
-  "files.source.smb":        { "en": "LAN",                          "fr": "Réseau" }
+  "files.source.smb":        { "en": "LAN",                          "fr": "Réseau" },
+  "service.mpd":             { "en": "MPD",                          "fr": "MPD" },
+  "mpd.connect":             { "en": "Connect",                      "fr": "Connecter" },
+  "mpd.disconnect":          { "en": "Disconnect",                   "fr": "Déconnecter" },
+  "mpd.connected":           { "en": "connected",                    "fr": "connecté" },
+  "mpd.disconnected":        { "en": "disconnected",                 "fr": "déconnecté" },
+  "mpd.host":                { "en": "Host",                         "fr": "Hôte" },
+  "mpd.port":                { "en": "Port",                         "fr": "Port" },
+  "mpd.password":            { "en": "Password (optional)",          "fr": "Mot de passe (optionnel)" },
+  "mpd.edit":                { "en": "Edit settings",               "fr": "Modifier les réglages" },
+  "mpd.reconnect":           { "en": "Reconnect",                   "fr": "Reconnecter" },
+  "mpd.stream-url":          { "en": "Stream URL (optional)",        "fr": "URL du flux (optionnel)" },
+  "mpd.stream-url-hint":     { "en": "Leave empty to play audio on the MPD server instead of this device.", "fr": "Laisser vide pour lire l'audio sur le serveur MPD plutôt que sur cet appareil." },
+  "mpd.cancel":              { "en": "Cancel",                       "fr": "Annuler" },
+  "mpd.refresh":             { "en": "Refresh library",              "fr": "Actualiser la bibliothèque" },
+  "mpd.no-tracks":           { "en": "No tracks in MPD library.",    "fr": "Aucun titre dans la bibliothèque MPD." },
+  "mpd.no-match":            { "en": "No tracks matching filter.",   "fr": "Aucun titre ne correspond au filtre." },
+  "mpd.filter-placeholder":  { "en": "Filter…",                     "fr": "Filtrer…" }
 }
