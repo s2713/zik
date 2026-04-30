@@ -45,9 +45,12 @@ def _sync_mount(server: str, share: str, username: str, password: str) -> tuple[
         _message: str,
         _default_user: str,
         _default_domain: str,
-        _flags: Gio.AskPasswordFlags,
+        flags: Gio.AskPasswordFlags,
     ) -> None:
-        # Credentials were already set on mount_op above — confirm them.
+        # For guest shares (no credentials supplied), request anonymous access
+        # when the server advertises it; otherwise confirm the stored credentials.
+        if not username and (flags & Gio.AskPasswordFlags.ANONYMOUS_SUPPORTED):
+            op.set_anonymous(True)
         op.reply(Gio.MountOperationResult.HANDLED)
 
     def _on_done(source: Gio.File, res: Gio.AsyncResult) -> None:
