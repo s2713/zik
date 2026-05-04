@@ -86,5 +86,16 @@
   "spotify.use-this-device":     { "en": "Use this device",               "fr": "Utiliser cet appareil" },
   "spotify.no-tracks":           { "en": "No saved tracks. Connect and click Refresh.", "fr": "Aucun titre sauvegardé. Connectez-vous et cliquez sur Actualiser." },
   "spotify.no-match":            { "en": "No tracks matching filter.",    "fr": "Aucun titre ne correspond au filtre." },
-  "spotify.filter-placeholder":  { "en": "Filter…",                      "fr": "Filtrer…" }
+  "spotify.filter-placeholder":  { "en": "Filter…",                      "fr": "Filtrer…" },
+
+  "service.podcasts":            { "en": "Podcasts",                      "fr": "Podcasts" },
+  "podcasts.add":                { "en": "Add podcast",                   "fr": "Ajouter un podcast" },
+  "podcasts.feed-url":           { "en": "RSS feed URL",                  "fr": "URL du flux RSS" },
+  "podcasts.subscribe":          { "en": "Subscribe",                     "fr": "S'abonner" },
+  "podcasts.adding":             { "en": "Adding…",                       "fr": "Ajout…" },
+  "podcasts.cancel":             { "en": "Cancel",                        "fr": "Annuler" },
+  "podcasts.unsubscribe":        { "en": "Remove",                        "fr": "Supprimer" },
+  "podcasts.no-feeds":           { "en": "No podcasts yet. Click Add podcast to subscribe.", "fr": "Aucun podcast. Cliquez sur Ajouter un podcast pour vous abonner." },
+  "podcasts.no-episodes":        { "en": "No episodes found.",            "fr": "Aucun épisode trouvé." },
+  "podcasts.loading":            { "en": "Loading…",                      "fr": "Chargement…" }
 }
