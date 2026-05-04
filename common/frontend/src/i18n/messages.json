@@ -53,5 +53,21 @@
   "mpd.refresh":             { "en": "Refresh library",              "fr": "Actualiser la bibliothèque" },
   "mpd.no-tracks":           { "en": "No tracks in MPD library.",    "fr": "Aucun titre dans la bibliothèque MPD." },
   "mpd.no-match":            { "en": "No tracks matching filter.",   "fr": "Aucun titre ne correspond au filtre." },
-  "mpd.filter-placeholder":  { "en": "Filter…",                     "fr": "Filtrer…" }
+  "mpd.filter-placeholder":  { "en": "Filter…",                     "fr": "Filtrer…" },
+
+  "service.subsonic":            { "en": "Subsonic",                      "fr": "Subsonic" },
+  "subsonic.connect":            { "en": "Connect",                       "fr": "Connecter" },
+  "subsonic.disconnect":         { "en": "Disconnect",                    "fr": "Déconnecter" },
+  "subsonic.edit":               { "en": "Edit settings",                 "fr": "Modifier les réglages" },
+  "subsonic.reconnect":          { "en": "Reconnect",                     "fr": "Reconnecter" },
+  "subsonic.connected":          { "en": "connected",                     "fr": "connecté" },
+  "subsonic.disconnected":       { "en": "disconnected",                  "fr": "déconnecté" },
+  "subsonic.server":             { "en": "Server URL",                    "fr": "URL du serveur" },
+  "subsonic.user":               { "en": "Username",                      "fr": "Identifiant" },
+  "subsonic.password":           { "en": "Password",                      "fr": "Mot de passe" },
+  "subsonic.cancel":             { "en": "Cancel",                        "fr": "Annuler" },
+  "subsonic.refresh":            { "en": "Refresh library",               "fr": "Actualiser la bibliothèque" },
+  "subsonic.no-tracks":          { "en": "No tracks in library.",         "fr": "Aucun titre dans la bibliothèque." },
+  "subsonic.no-match":           { "en": "No tracks matching filter.",    "fr": "Aucun titre ne correspond au filtre." },
+  "subsonic.filter-placeholder": { "en": "Filter…",                      "fr": "Filtrer…" }
 }

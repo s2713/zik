@@ -20,6 +20,8 @@ from .services.files.routes import make_files_router
 from .services.files.sources import Source, SourceManager
 from .services.mpd.client import MpdProxy
 from .services.mpd.routes import make_mpd_router
+from .services.subsonic.client import SubsonicProxy
+from .services.subsonic.routes import make_subsonic_router
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +86,9 @@ def make_app(
     removable_root: str | None = None,
 ) -> Starlette:
     # Suppress high-frequency status polls from the access log.
-    logging.getLogger("uvicorn.access").addFilter(_SuppressPath("/api/mpd/status"))
+    logging.getLogger("uvicorn.access").addFilter(
+        _SuppressPath("/api/mpd/status", "/api/subsonic/status")
+    )
 
     bp = backend_port or int(os.environ.get("ZIK_BACKEND_PORT", "8173"))
     vp = vite_port or int(os.environ.get("ZIK_VITE_PORT", "5173"))
@@ -114,6 +118,7 @@ def make_app(
         ))
     source_manager = SourceManager(_sources)
     mpd_proxy = MpdProxy()
+    subsonic_proxy = SubsonicProxy()
 
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> AsyncGenerator[None, None]:
@@ -136,6 +141,16 @@ def make_app(
                     "password": row["password"],
                 },
             ))
+
+        # Reconnect to Subsonic if config was saved in a previous session.
+        sub_server = await library_db.get_setting("subsonic.server")
+        if sub_server:
+            sub_user = await library_db.get_setting("subsonic.user") or ""
+            sub_pass = await library_db.get_setting("subsonic.password") or ""
+            try:
+                await subsonic_proxy.connect(sub_server, sub_user, sub_pass)
+            except Exception as exc:
+                logger.warning("subsonic: auto-reconnect failed: %s", exc)
 
         # Reconnect to MPD if config was saved in a previous session.
         mpd_host = await library_db.get_setting("mpd.host")
@@ -167,6 +182,7 @@ def make_app(
 
         yield  # application runs here
 
+        await subsonic_proxy.disconnect()
         await library_db.close()
 
     async def player_command(request: Request) -> JSONResponse:
@@ -197,6 +213,7 @@ def make_app(
             WebSocketRoute("/api/ws/mpris-bridge", mpris_bridge_ws),
             *make_files_router(library_db, source_manager),
             *make_mpd_router(mpd_proxy, library_db),
+            *make_subsonic_router(subsonic_proxy, library_db),
         ],
         lifespan=_lifespan,
     )
