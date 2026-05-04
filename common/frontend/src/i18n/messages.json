@@ -97,5 +97,18 @@
   "podcasts.unsubscribe":        { "en": "Remove",                        "fr": "Supprimer" },
   "podcasts.no-feeds":           { "en": "No podcasts yet. Click Add podcast to subscribe.", "fr": "Aucun podcast. Cliquez sur Ajouter un podcast pour vous abonner." },
   "podcasts.no-episodes":        { "en": "No episodes found.",            "fr": "Aucun épisode trouvé." },
-  "podcasts.loading":            { "en": "Loading…",                      "fr": "Chargement…" }
+  "podcasts.loading":            { "en": "Loading…",                      "fr": "Chargement…" },
+
+  "service.radio":               { "en": "Radio",                         "fr": "Radio" },
+  "radio.search":                { "en": "Search",                        "fr": "Rechercher" },
+  "radio.search-placeholder":    { "en": "Station name…",                 "fr": "Nom de la station…" },
+  "radio.popular":               { "en": "Top stations",                  "fr": "Stations populaires" },
+  "radio.favorites":             { "en": "Favorites",                     "fr": "Favoris" },
+  "radio.favorite":              { "en": "Add to favorites",              "fr": "Ajouter aux favoris" },
+  "radio.unfavorite":            { "en": "Remove from favorites",         "fr": "Retirer des favoris" },
+  "radio.live":                  { "en": "LIVE",                         "fr": "LIVE" },
+  "radio.loading":               { "en": "Loading…",                     "fr": "Chargement…" },
+  "radio.no-results":            { "en": "No stations found.",            "fr": "Aucune station trouvée." },
+  "radio.no-favorites":          { "en": "No favorites yet. Click ★ on a station to save it.", "fr": "Aucun favori. Cliquez sur ★ pour en ajouter." },
+  "radio.no-somafm":             { "en": "Could not load SomaFM channels.", "fr": "Impossible de charger les chaînes SomaFM." }
 }

@@ -21,6 +21,7 @@ from .services.files.sources import Source, SourceManager
 from .services.mpd.client import MpdProxy
 from .services.mpd.routes import make_mpd_router
 from .services.podcasts.routes import make_podcasts_router
+from .services.radio.routes import make_radio_router
 from .services.spotify.api import SpotifyApi
 from .services.spotify.librespot import LibrespotProcess
 from .services.spotify.routes import make_spotify_router
@@ -246,6 +247,7 @@ def make_app(
                 _spotify_client_id, _redirect_uri, _frontend_url,
             ),
             *make_podcasts_router(library_db),
+            *make_radio_router(library_db),
         ],
         lifespan=_lifespan,
     )

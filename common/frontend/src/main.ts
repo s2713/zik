@@ -12,6 +12,7 @@ import "./services/mpd/mpd-player-element.js";        // registers <mpd-player>
 import "./services/subsonic/subsonic-player-element.js"; // registers <subsonic-player>
 import "./services/spotify/spotify-player-element.js";   // registers <spotify-player>
 import "./services/podcasts/podcasts-player-element.js"; // registers <podcasts-player>
+import "./services/radio/radio-player-element.js";       // registers <radio-player>
 
 async function init(): Promise<void> {
   await loadMessages();
@@ -56,6 +57,8 @@ function mountPlayer(): void {
     document.body.appendChild(document.createElement("spotify-player"));
   if (!document.querySelector("podcasts-player"))
     document.body.appendChild(document.createElement("podcasts-player"));
+  if (!document.querySelector("radio-player"))
+    document.body.appendChild(document.createElement("radio-player"));
 }
 
 async function checkHealth(): Promise<void> {
