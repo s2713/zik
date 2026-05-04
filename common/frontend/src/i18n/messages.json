@@ -69,5 +69,22 @@
   "subsonic.refresh":            { "en": "Refresh library",               "fr": "Actualiser la bibliothèque" },
   "subsonic.no-tracks":          { "en": "No tracks in library.",         "fr": "Aucun titre dans la bibliothèque." },
   "subsonic.no-match":           { "en": "No tracks matching filter.",    "fr": "Aucun titre ne correspond au filtre." },
-  "subsonic.filter-placeholder": { "en": "Filter…",                      "fr": "Filtrer…" }
+  "subsonic.filter-placeholder": { "en": "Filter…",                      "fr": "Filtrer…" },
+
+  "service.spotify":             { "en": "Spotify",                       "fr": "Spotify" },
+  "spotify.authed":              { "en": "connected",                     "fr": "connecté" },
+  "spotify.not-authed":          { "en": "not connected",                 "fr": "non connecté" },
+  "spotify.connect":             { "en": "Connect with Spotify",          "fr": "Connecter avec Spotify" },
+  "spotify.disconnect":          { "en": "Disconnect",                    "fr": "Déconnecter" },
+  "spotify.refresh-library":     { "en": "Refresh library",               "fr": "Actualiser la bibliothèque" },
+  "spotify.list-devices":        { "en": "Devices",                       "fr": "Appareils" },
+  "spotify.use":                 { "en": "Use",                           "fr": "Utiliser" },
+  "spotify.cancel":              { "en": "Close",                         "fr": "Fermer" },
+  "spotify.active-device":       { "en": "Active device",                 "fr": "Appareil actif" },
+  "spotify.playing-on":          { "en": "Playing on:",                   "fr": "Lecture sur :" },
+  "spotify.librespot-stopped":   { "en": "Local device not running",      "fr": "Appareil local non actif" },
+  "spotify.use-this-device":     { "en": "Use this device",               "fr": "Utiliser cet appareil" },
+  "spotify.no-tracks":           { "en": "No saved tracks. Connect and click Refresh.", "fr": "Aucun titre sauvegardé. Connectez-vous et cliquez sur Actualiser." },
+  "spotify.no-match":            { "en": "No tracks matching filter.",    "fr": "Aucun titre ne correspond au filtre." },
+  "spotify.filter-placeholder":  { "en": "Filter…",                      "fr": "Filtrer…" }
 }

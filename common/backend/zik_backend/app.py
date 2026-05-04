@@ -20,6 +20,9 @@ from .services.files.routes import make_files_router
 from .services.files.sources import Source, SourceManager
 from .services.mpd.client import MpdProxy
 from .services.mpd.routes import make_mpd_router
+from .services.spotify.api import SpotifyApi
+from .services.spotify.librespot import LibrespotProcess
+from .services.spotify.routes import make_spotify_router
 from .services.subsonic.client import SubsonicProxy
 from .services.subsonic.routes import make_subsonic_router
 
@@ -84,10 +87,11 @@ def make_app(
     files_root: str | None = None,
     db_path: str | None = None,
     removable_root: str | None = None,
+    spotify_client_id: str | None = None,
 ) -> Starlette:
     # Suppress high-frequency status polls from the access log.
     logging.getLogger("uvicorn.access").addFilter(
-        _SuppressPath("/api/mpd/status", "/api/subsonic/status")
+        _SuppressPath("/api/mpd/status", "/api/subsonic/status", "/api/spotify/status")
     )
 
     bp = backend_port or int(os.environ.get("ZIK_BACKEND_PORT", "8173"))
@@ -117,8 +121,16 @@ def make_app(
             root=_removable_root, kind="removable", mounted=False,
         ))
     source_manager = SourceManager(_sources)
-    mpd_proxy = MpdProxy()
+    mpd_proxy      = MpdProxy()
     subsonic_proxy = SubsonicProxy()
+
+    _spotify_client_id = (
+        spotify_client_id or os.environ.get("ZIK_SPOTIFY_CLIENT_ID", "")
+    )
+    _redirect_uri = f"http://127.0.0.1:{bp}/api/spotify/auth/callback"
+    _frontend_url = f"http://127.0.0.1:{vp}/"
+    spotify_api       = SpotifyApi(_spotify_client_id)
+    spotify_librespot = LibrespotProcess()
 
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> AsyncGenerator[None, None]:
@@ -141,6 +153,19 @@ def make_app(
                     "password": row["password"],
                 },
             ))
+
+        # Restore Spotify tokens and restart librespot if previously authenticated.
+        sp_access  = await library_db.get_setting("spotify.access_token") or ""
+        sp_refresh = await library_db.get_setting("spotify.refresh_token") or ""
+        sp_expiry  = float(await library_db.get_setting("spotify.expires_at") or "0")
+        if sp_access and sp_refresh:
+            spotify_api.load_tokens(sp_access, sp_refresh, sp_expiry)
+            try:
+                # Refresh the token so librespot gets a fresh one.
+                fresh = await spotify_api._token()
+                await spotify_librespot.start(fresh)
+            except Exception as exc:
+                logger.warning("spotify: startup restore failed: %s", exc)
 
         # Reconnect to Subsonic if config was saved in a previous session.
         sub_server = await library_db.get_setting("subsonic.server")
@@ -182,6 +207,7 @@ def make_app(
 
         yield  # application runs here
 
+        await spotify_librespot.stop()
         await subsonic_proxy.disconnect()
         await library_db.close()
 
@@ -214,6 +240,10 @@ def make_app(
             *make_files_router(library_db, source_manager),
             *make_mpd_router(mpd_proxy, library_db),
             *make_subsonic_router(subsonic_proxy, library_db),
+            *make_spotify_router(
+                spotify_api, spotify_librespot, library_db,
+                _spotify_client_id, _redirect_uri, _frontend_url,
+            ),
         ],
         lifespan=_lifespan,
     )

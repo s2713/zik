@@ -10,6 +10,7 @@ import "./services/demo/demo-player-element.js";  // registers <demo-player>
 import "./services/files/files-player-element.js"; // registers <files-player>
 import "./services/mpd/mpd-player-element.js";        // registers <mpd-player>
 import "./services/subsonic/subsonic-player-element.js"; // registers <subsonic-player>
+import "./services/spotify/spotify-player-element.js";  // registers <spotify-player>
 
 async function init(): Promise<void> {
   await loadMessages();
@@ -50,6 +51,8 @@ function mountPlayer(): void {
     document.body.appendChild(document.createElement("mpd-player"));
   if (!document.querySelector("subsonic-player"))
     document.body.appendChild(document.createElement("subsonic-player"));
+  if (!document.querySelector("spotify-player"))
+    document.body.appendChild(document.createElement("spotify-player"));
 }
 
 async function checkHealth(): Promise<void> {

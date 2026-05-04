@@ -63,6 +63,10 @@ export ZIK_LIBRARY_DB="$XDG_DATA_HOME/library.db"
 # Example: ZIK_REMOVABLE_ROOT=~/usb-music ./targets/demo/run.sh
 export ZIK_REMOVABLE_ROOT="${ZIK_REMOVABLE_ROOT:-}"
 
+# Spotify OAuth client ID (from the Spotify Developer Dashboard).
+# Example: ZIK_SPOTIFY_CLIENT_ID=abc123 ./targets/demo/run.sh
+export ZIK_SPOTIFY_CLIENT_ID="${ZIK_SPOTIFY_CLIENT_ID:-}"
+
 # Unix socket shared between backend (P1) and per-user helper (P2).
 export ZIK_HELPER_SOCKET="$XDG_RUNTIME_DIR/zik.sock"
 
