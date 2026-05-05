@@ -9,7 +9,7 @@ packages = [{ include = "zik_mpris_bridge" }]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-dasbus = "^1.7"
+dbus-fast = ">=2.0"
 websockets = ">=13.0"
 
 [tool.poetry.group.dev.dependencies]
@@ -18,6 +18,15 @@ ruff = "^0.5"
 
 [tool.poetry.scripts]
 zik-mpris-bridge = "zik_mpris_bridge.__main__:main"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "SIM"]
+# F821/F722: dbus-fast uses D-Bus type-signature strings as PEP 563 annotations;
+# they are not Python identifiers and must be excluded from undefined-name checks.
+per-file-ignores = { "zik_mpris_bridge/__main__.py" = ["F821", "F722"] }
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

@@ -171,8 +171,8 @@ export class PodcastsPlayerElement extends PlayerBase {
       this._elapsed  = this._audio.currentTime;
       this._duration = isFinite(this._audio.duration) ? this._audio.duration : 0;
     });
-    this._audio.addEventListener("play",  () => { this._playing = true; });
-    this._audio.addEventListener("pause", () => { this._playing = false; });
+    this._audio.addEventListener("play",  () => { this._playing = true;  void this._notifyPlayer("Play");  });
+    this._audio.addEventListener("pause", () => { this._playing = false; void this._notifyPlayer("Pause"); });
     this._audio.addEventListener("ended", () => { void this._playNext(); });
     this._audio.addEventListener("error", () => {
       const err        = this._audio.error;
@@ -416,6 +416,30 @@ export class PodcastsPlayerElement extends PlayerBase {
   private _onVolume(e: Event): void {
     this._volume = parseInt((e.target as HTMLInputElement).value, 10) / 100;
     this._audio.volume = this._volume;
+  }
+
+  private async _notifyPlayer(type: string): Promise<void> {
+    // Post current playback state to backend for MPRIS bridge.
+    const ep = this._playlist[this._currentIndex];
+    if (!ep) return;
+    try {
+      await fetch("/api/player/command", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({
+          type,
+          service:  "podcasts",
+          track_id: ep.guid,
+          title:    ep.title,
+          artist:   "",
+          album:    this._selected?.title ?? "",
+          art_url:  this._selected?.image ?? "",
+          duration: ep.duration,
+          position: this._audio.currentTime,
+          volume:   this._volume,
+        }),
+      });
+    } catch { /* backend unavailable */ }
   }
 
   // ---- helpers ----

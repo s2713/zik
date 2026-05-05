@@ -117,7 +117,8 @@ export class MpdPlayerElement extends PlayerBase {
   private readonly _audio      = new Audio();
   private readonly _normalizer = new VolumeNormalizer();
 
-  private _pollTimer: ReturnType<typeof setInterval> | null = null;
+  private _pollTimer:        ReturnType<typeof setInterval> | null = null;
+  private _lastNotifyKey = "";  // "state:file" — avoids redundant MPRIS events
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -182,11 +183,12 @@ export class MpdPlayerElement extends PlayerBase {
         status: MpdStatus;
         currentsong: MpdTrack;
       };
-      this._connected = data.connected;
-      this._streamUrl = data.stream_url ?? "";
-      this._status = data.status ?? {};
+      this._connected   = data.connected;
+      this._streamUrl   = data.stream_url ?? "";
+      this._status      = data.status ?? {};
       this._currentsong = data.currentsong ?? { file: "" };
       if (this._connected) {
+        void this._notifyPlayer();
         // Keep form in sync with actual connection so Edit is always pre-filled.
         // Skip if the form is open — the user may be mid-edit.
         if (!this._showForm) {
@@ -354,6 +356,33 @@ export class MpdPlayerElement extends PlayerBase {
     // Volume is local only — does not affect the MPD server's output level.
     this._volume = parseInt((e.target as HTMLInputElement).value, 10) / 100;
     this._audio.volume = this._volume;
+  }
+
+  private async _notifyPlayer(): Promise<void> {
+    // Send current MPD state to the MPRIS event bus; deduplicated by key.
+    const s    = this._status;
+    const tr   = this._currentsong;
+    const key  = `${s.state ?? ""}:${tr.file}`;
+    if (key === this._lastNotifyKey) return;
+    this._lastNotifyKey = key;
+    const mprisType = s.state === "play" ? "Play" : s.state === "pause" ? "Pause" : "Stop";
+    try {
+      await fetch("/api/player/command", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({
+          type:     mprisType,
+          service:  "mpd",
+          track_id: tr.file,
+          title:    tr.title   ?? tr.file,
+          artist:   tr.artist  ?? "",
+          album:    tr.album   ?? "",
+          duration: parseFloat(tr.time ?? "0"),
+          position: parseFloat(s.elapsed ?? "0"),
+          volume:   this._volume,
+        }),
+      });
+    } catch { /* backend unavailable */ }
   }
 
   private async _post(body: object): Promise<void> {

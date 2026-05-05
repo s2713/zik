@@ -268,8 +268,11 @@ export class FilesPlayerElement extends PlayerBase {
         headers: { "content-type": "application/json", ...getCsrfHeaders() },
         body: JSON.stringify({
           type,
+          service:   "files",
           track_id:  t2?.id       ?? "",
           title:     t2?.title    ?? "",
+          artist:    t2?.artist   ?? "",
+          album:     t2?.album    ?? "",
           duration:  t2?.duration ?? 0,
           position:  ps.position,
           volume:    ps.volume,

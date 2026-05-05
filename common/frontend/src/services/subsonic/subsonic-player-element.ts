@@ -122,8 +122,8 @@ export class SubsonicPlayerElement extends PlayerBase {
       this._elapsed  = this._audio.currentTime;
       this._duration = isFinite(this._audio.duration) ? this._audio.duration : 0;
     });
-    this._audio.addEventListener("play",  () => { this._playing = true; });
-    this._audio.addEventListener("pause", () => { this._playing = false; });
+    this._audio.addEventListener("play",  () => { this._playing = true;  void this._notifyPlayer("Play");  });
+    this._audio.addEventListener("pause", () => { this._playing = false; void this._notifyPlayer("Pause"); });
 
     // Auto-advance to the next track in the playlist when a track ends.
     this._audio.addEventListener("ended", () => { void this._playNext(); });
@@ -331,6 +331,29 @@ export class SubsonicPlayerElement extends PlayerBase {
   private _onVolume(e: Event): void {
     this._volume = parseInt((e.target as HTMLInputElement).value, 10) / 100;
     this._audio.volume = this._volume;
+  }
+
+  private async _notifyPlayer(type: string): Promise<void> {
+    // Post current playback state to backend for MPRIS bridge.
+    const track = this._playlist[this._currentIndex];
+    if (!track) return;
+    try {
+      await fetch("/api/player/command", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({
+          type,
+          service:  "subsonic",
+          track_id: track.id,
+          title:    track.title  ?? "",
+          artist:   track.artist ?? "",
+          album:    track.album  ?? "",
+          duration: track.duration ?? 0,
+          position: this._audio.currentTime,
+          volume:   this._volume,
+        }),
+      });
+    } catch { /* backend unavailable */ }
   }
 
   private _setFormField(field: keyof ConnForm, value: string): void {

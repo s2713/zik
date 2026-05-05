@@ -73,11 +73,12 @@ export class DemoPlayerElement extends PlayerBase {
         headers: { "content-type": "application/json", ...getCsrfHeaders() },
         body: JSON.stringify({
           type,
-          track_id: track.id,
-          title: track.title,
-          duration: track.duration,
-          position: ps.position,
-          volume: ps.volume,
+          service:   "demo",
+          track_id:  track.id,
+          title:     track.title,
+          duration:  track.duration,
+          position:  ps.position,
+          volume:    ps.volume,
         }),
       });
     } catch {

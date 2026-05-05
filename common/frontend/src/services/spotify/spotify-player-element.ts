@@ -157,6 +157,7 @@ export class SpotifyPlayerElement extends PlayerBase {
         this._deviceName = data.device_name  ?? "";
         this._track      = data.track        ?? null;
         this._durationMs = data.track?.duration_ms ?? 0;
+        void this._notifyPlayer();
         this._startPolling();
       } else {
         this._stopPolling();
@@ -281,6 +282,29 @@ export class SpotifyPlayerElement extends PlayerBase {
     const pct = parseInt((e.target as HTMLInputElement).value, 10);
     this._volumePct = pct;
     void this._command("Volume", { percent: pct });
+  }
+
+  private async _notifyPlayer(): Promise<void> {
+    // Post current playback state to backend for MPRIS bridge.
+    const track = this._track;
+    if (!track) return;
+    try {
+      await fetch("/api/player/command", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({
+          type:     this._playing ? "Play" : "Pause",
+          service:  "spotify",
+          track_id: track.id,
+          title:    track.title,
+          artist:   track.artist,
+          album:    track.album,
+          duration: track.duration_ms / 1000,
+          position: this._progressMs / 1000,
+          volume:   this._volumePct / 100,
+        }),
+      });
+    } catch { /* backend unavailable */ }
   }
 
   // ---- display list ----

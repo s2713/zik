@@ -112,8 +112,8 @@ export class RadioPlayerElement extends PlayerBase {
 
   override connectedCallback(): void {
     super.connectedCallback();
-    this._audio.addEventListener("play",  () => { this._playing = true; });
-    this._audio.addEventListener("pause", () => { this._playing = false; });
+    this._audio.addEventListener("play",  () => { this._playing = true;  void this._notifyPlayer("Play");  });
+    this._audio.addEventListener("pause", () => { this._playing = false; void this._notifyPlayer("Pause"); });
     this._audio.addEventListener("error", () => {
       const err      = this._audio.error;
       this._audioError = err ? `Audio error ${err.code}: ${err.message}` : "Unknown audio error";
@@ -224,6 +224,30 @@ export class RadioPlayerElement extends PlayerBase {
   private _onVolume(e: Event): void {
     this._volume = parseInt((e.target as HTMLInputElement).value, 10) / 100;
     this._audio.volume = this._volume;
+  }
+
+  private async _notifyPlayer(type: string): Promise<void> {
+    // Post current playback state to backend for MPRIS bridge. Radio has no duration/position.
+    const st = this._current;
+    if (!st) return;
+    try {
+      await fetch("/api/player/command", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({
+          type,
+          service:  "radio",
+          track_id: st.uuid ?? st.id ?? st.url,
+          title:    st.name,
+          artist:   "",
+          album:    "",
+          art_url:  st.image ?? st.favicon ?? "",
+          duration: 0,
+          position: 0,
+          volume:   this._volume,
+        }),
+      });
+    } catch { /* backend unavailable */ }
   }
 
   // ---- favorites ----
