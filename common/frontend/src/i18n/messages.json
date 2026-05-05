@@ -111,6 +111,21 @@
   "quota.of":                    { "en": "of",                             "fr": "sur" },
 
   "app.services-label":          { "en": "Services:",                     "fr": "Services :" },
+  "app.account":               { "en": "Account",                       "fr": "Compte" },
+
+  "account.title":             { "en": "Account",                       "fr": "Compte" },
+  "account.my-services":       { "en": "My services",                   "fr": "Mes services" },
+  "account.share-admin":       { "en": "Share with admin",              "fr": "Partager avec l'admin" },
+  "account.password":          { "en": "Change password",               "fr": "Changer le mot de passe" },
+  "account.current-password":  { "en": "Current password",              "fr": "Mot de passe actuel" },
+  "account.new-password":      { "en": "New password",                  "fr": "Nouveau mot de passe" },
+  "account.confirm-password":  { "en": "Confirm new password",          "fr": "Confirmer le nouveau mot de passe" },
+  "account.save-password":     { "en": "Save",                          "fr": "Enregistrer" },
+  "account.password-ok":       { "en": "Password changed.",             "fr": "Mot de passe modifié." },
+  "account.password-mismatch": { "en": "Passwords do not match.",       "fr": "Les mots de passe ne correspondent pas." },
+  "account.password-empty":    { "en": "Password cannot be empty.",     "fr": "Le mot de passe ne peut pas être vide." },
+  "account.password-error":    { "en": "Error changing password.",      "fr": "Erreur lors du changement de mot de passe." },
+  "account.simulated":         { "en": "(simulated in demo)",           "fr": "(simulé en démo)" },
 
   "screen.locking":            { "en": "Locking & turning off screen",  "fr": "Verrouillage & extinction de l'écran" },
   "screen.click-to-unlock":    { "en": "Click or press any key to unlock", "fr": "Cliquez ou appuyez sur une touche pour déverrouiller" },

@@ -29,6 +29,7 @@ from .services.spotify.librespot import LibrespotProcess
 from .services.spotify.routes import make_spotify_router
 from .services.subsonic.client import SubsonicProxy
 from .services.subsonic.routes import make_subsonic_router
+from .user import make_user_router
 
 logger = logging.getLogger(__name__)
 
@@ -263,6 +264,7 @@ def make_app(
             *make_quota_router(library_db, _offline_dir),
             *make_radio_router(library_db),
             *make_power_router(),
+            *make_user_router(),
         ],
         lifespan=_lifespan,
     )

@@ -1,5 +1,7 @@
 import "./power-bar.js";      // registers <power-bar>
 import "./screen-lock.js";    // registers <screen-lock>
+import "./user-account.js";   // registers <user-account>
+import { SERVICES_CHANGED_EVENT } from "./user-account.js";
 import { ensureCsrfToken } from "./csrf.js";
 import {
   SUPPORTED_LANGS,
@@ -64,6 +66,18 @@ function mountScreenLock(): void {
   document.body.appendChild(document.createElement("screen-lock"));
 }
 
+function mountAccountPanel(): void {
+  // Inserted after the service-bar; idempotent.
+  if (document.querySelector("user-account")) return;
+  const panel = document.createElement("user-account");
+  const serviceBar = document.getElementById("service-bar");
+  if (serviceBar?.nextSibling) {
+    document.body.insertBefore(panel, serviceBar.nextSibling);
+  } else {
+    document.body.appendChild(panel);
+  }
+}
+
 async function init(): Promise<void> {
   await loadMessages();
   await ensureCsrfToken(); // fetch CSRF cookie before any POST
@@ -71,7 +85,10 @@ async function init(): Promise<void> {
   mountPowerBar();
   mountPlayer();
   renderServiceToggles();
+  mountAccountPanel();
   mountScreenLock();
+  // Re-render service bar whenever the account panel toggles a service.
+  window.addEventListener(SERVICES_CHANGED_EVENT, () => renderServiceToggles());
   await checkHealth();
 }
 
