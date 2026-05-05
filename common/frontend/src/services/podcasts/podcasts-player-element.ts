@@ -4,6 +4,7 @@ import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
+import { VolumeNormalizer } from "../../audio/normalizer.js";
 
 interface PodcastFeed {
   url:    string;
@@ -154,9 +155,12 @@ export class PodcastsPlayerElement extends LitElement {
   @state() private _saved:       Map<string, string> = new Map();
   // audio_url → in-progress download state
   @state() private _downloads:   Map<string, DownloadState> = new Map();
-  @state() private _quota:       QuotaInfo | null = null;
+  @state() private _quota:            QuotaInfo | null = null;
+  @state() private _normalizeOn      = false;
+  @state() private _normalizeBlocked = false;
 
-  private readonly _audio = new Audio();
+  private readonly _audio      = new Audio();
+  private readonly _normalizer = new VolumeNormalizer();
   // Keep EventSource refs so we can close them on disconnect.
   private readonly _eventSources = new Map<string, EventSource>();
 
@@ -183,6 +187,7 @@ export class PodcastsPlayerElement extends LitElement {
     super.disconnectedCallback();
     this._audio.pause();
     this._audio.src = "";
+    this._normalizer.disconnect();
     // Close any open SSE connections.
     for (const es of this._eventSources.values()) es.close();
     this._eventSources.clear();
@@ -352,9 +357,40 @@ export class PodcastsPlayerElement extends LitElement {
     const ep           = this._playlist[index];
     // Use the local URL if the episode has been saved offline.
     const localUrl     = this._saved.get(ep.url);
-    this._audio.src    = localUrl ?? ep.url;
+    const src          = localUrl ?? ep.url;
+    this._audio.src    = src;
     this._audio.volume = this._volume;
     void this._audio.play();
+    // Re-evaluate normalize availability: CDN URLs are cross-origin → blocked.
+    const sameOrigin = VolumeNormalizer.isSameOrigin(this._audio.src);
+    this._normalizeBlocked = !sameOrigin;
+    if (!sameOrigin) this._normalizer.disable();
+  }
+
+  private _connectNormalizer(): void {
+    // Cross-origin check MUST happen before connect(): Chrome permanently captures
+    // the audio element on createMediaElementSource (even when it throws), routing
+    // its output to the now-dead AudioContext → permanent silence if we proceed.
+    if (!VolumeNormalizer.isSameOrigin(this._audio.src)) {
+      this._normalizeBlocked = true;
+      this._normalizer.disable();
+      return;
+    }
+    if (this._normalizer.blocked) { this._normalizeBlocked = true; return; }
+    const ok = this._normalizer.connect(this._audio);
+    this._normalizeBlocked = !ok;
+    if (ok && this._normalizeOn) this._normalizer.enable();
+  }
+
+  private _toggleNormalize(): void {
+    if (this._normalizeBlocked) return;
+    this._normalizeOn = !this._normalizeOn;
+    if (this._normalizeOn) {
+      this._connectNormalizer();
+      this._normalizer.enable();
+    } else {
+      this._normalizer.disable();
+    }
   }
 
   private _playEpisode(ep: PodcastEpisode, playlist: PodcastEpisode[]): void {
@@ -573,6 +609,13 @@ export class PodcastsPlayerElement extends LitElement {
             <span>${t("player.volume")}</span>
             <input type="range" min="0" max="100"
                    .value=${live(Math.round(this._volume * 100))} @input=${this._onVolume} />
+            <button @click=${this._toggleNormalize}
+                    title=${this._normalizeBlocked ? t("player.normalize-blocked") : ""}
+                    ?disabled=${this._normalizeBlocked}>
+              ${this._normalizeBlocked
+                ? t("player.normalize-blocked")
+                : this._normalizeOn ? t("player.normalizing") : t("player.normalize")}
+            </button>
           </div>
         </div>
       ` : nothing}

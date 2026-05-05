@@ -34,6 +34,9 @@ export class FilesPlayer extends EventTarget {
 
   get state(): Readonly<FilesPlayerState> { return this._state; }
 
+  /** Expose the underlying audio element so callers can attach Web Audio nodes. */
+  get audioElement(): HTMLAudioElement { return this._audio; }
+
   constructor() {
     super();
     // Mirror HTMLAudioElement events into our state machine.

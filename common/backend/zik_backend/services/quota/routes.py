@@ -12,8 +12,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from ..files.db import LibraryDB
-from ...storage.quota import DEFAULT_LIMIT, QUOTA_KEY, disk_usage
+from zik_backend.services.files.db import LibraryDB
+from zik_backend.storage.quota import DEFAULT_LIMIT, QUOTA_KEY, disk_usage
 
 
 def make_quota_router(db: LibraryDB, offline_dir: Path) -> list:

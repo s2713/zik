@@ -67,11 +67,24 @@ class SpotifyApi:
     # ---- internal HTTP helpers ----
 
     async def _token(self) -> str:
-        """Return a valid access token, refreshing if it has expired."""
+        """Return a valid access token, refreshing if expired.
+
+        On 400/401 the refresh token is revoked; clears state so authed → False
+        and callers stop retrying until the user re-authenticates.
+        """
         if time.time() >= self.expires_at and self.refresh_token:
             logger.info("spotify: refreshing access token")
-            td = await refresh_access_token(self._client_id, self.refresh_token)
-            self.store_token_dict(td)
+            try:
+                td = await refresh_access_token(self._client_id, self.refresh_token)
+                self.store_token_dict(td)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code in (400, 401):
+                    logger.warning(
+                        "spotify: refresh token rejected (%d) — clearing auth state",
+                        exc.response.status_code,
+                    )
+                    self.clear()
+                raise
         return self.access_token
 
     async def _get(self, path: str, **params: object) -> dict:

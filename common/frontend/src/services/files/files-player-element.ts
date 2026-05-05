@@ -4,6 +4,7 @@ import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
+import { VolumeNormalizer } from "../../audio/normalizer.js";
 import { FilesPlayer, type FileTrack, type FilesPlayerState } from "./files-player.js";
 
 type SortKey = "artist" | "album" | "title" | "genre" | "year";
@@ -83,7 +84,8 @@ export class FilesPlayerElement extends LitElement {
     .vol input { width: 120px; }
   `;
 
-  private readonly _player = new FilesPlayer();
+  private readonly _player     = new FilesPlayer();
+  private readonly _normalizer = new VolumeNormalizer();
 
   private readonly _onStateChange = (e: Event): void => {
     this._ps = (e as CustomEvent<FilesPlayerState>).detail;
@@ -94,6 +96,8 @@ export class FilesPlayerElement extends LitElement {
   @state() private _sort: SortKey = "artist";
   @state() private _sources: Source[] = [];
   @state() private _showAddLan = false;
+  @state() private _normalizeOn      = false;
+  @state() private _normalizeBlocked = false;
   @state() private _lanForm: LanForm = {
     label: "", server: "", share: "", subpath: "", username: "", password: "",
   };
@@ -109,6 +113,7 @@ export class FilesPlayerElement extends LitElement {
     super.disconnectedCallback();
     this._player.removeEventListener("statechange", this._onStateChange);
     this._player.stop();
+    this._normalizer.disconnect();
   }
 
   // ---- source handlers ----
@@ -180,6 +185,27 @@ export class FilesPlayerElement extends LitElement {
     const url = `/api/files/audio/${track.id}`;
     this._player.play(track, url);
     void this._postCommand("Play", track);
+  }
+
+  private _connectNormalizer(): void {
+    if (!VolumeNormalizer.isSameOrigin(this._player.audioElement.src)) {
+      this._normalizeBlocked = true; this._normalizer.disable(); return;
+    }
+    if (this._normalizer.blocked) { this._normalizeBlocked = true; return; }
+    const ok = this._normalizer.connect(this._player.audioElement);
+    this._normalizeBlocked = !ok;
+    if (ok && this._normalizeOn) this._normalizer.enable();
+  }
+
+  private _toggleNormalize(): void {
+    if (this._normalizeBlocked) return;
+    this._normalizeOn = !this._normalizeOn;
+    if (this._normalizeOn) {
+      this._connectNormalizer();
+      this._normalizer.enable();
+    } else {
+      this._normalizer.disable();
+    }
   }
 
   private _pause(): void {
@@ -426,6 +452,13 @@ export class FilesPlayerElement extends LitElement {
             <span>${t("player.volume")}</span>
             <input type="range" min="0" max="100"
                    .value=${live(Math.round(ps.volume * 100))} @input=${this._onVolume} />
+            <button @click=${this._toggleNormalize}
+                    title=${this._normalizeBlocked ? t("player.normalize-blocked") : ""}
+                    ?disabled=${this._normalizeBlocked}>
+              ${this._normalizeBlocked
+                ? t("player.normalize-blocked")
+                : this._normalizeOn ? t("player.normalizing") : t("player.normalize")}
+            </button>
           </div>
         </div>
       ` : nothing}

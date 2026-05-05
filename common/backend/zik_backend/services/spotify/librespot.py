@@ -91,7 +91,10 @@ class LibrespotProcess:
                             "and librespot's client may be restricted by Spotify."
                         )
                     elif "unable to load audio item" in ll:
-                        self.last_error = "Unable to load audio — track may be unavailable or Premium required."
+                        self.last_error = (
+                            "Unable to load audio — track may be unavailable "
+                            "or Premium required."
+                        )
                 else:
                     logger.debug("librespot: %s", line)
         except Exception:

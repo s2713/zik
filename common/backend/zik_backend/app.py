@@ -175,6 +175,11 @@ def make_app(
                 await spotify_librespot.start(fresh)
             except Exception as exc:
                 logger.warning("spotify: startup restore failed: %s", exc)
+                # Clear persisted tokens so the next startup doesn't retry.
+                spotify_api.clear()
+                await library_db.set_setting("spotify.access_token",  "")
+                await library_db.set_setting("spotify.refresh_token", "")
+                await library_db.set_setting("spotify.expires_at",    "0")
 
         # Reconnect to Subsonic if config was saved in a previous session.
         sub_server = await library_db.get_setting("subsonic.server")

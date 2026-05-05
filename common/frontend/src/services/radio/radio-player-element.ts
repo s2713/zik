@@ -4,6 +4,7 @@ import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
+import { VolumeNormalizer } from "../../audio/normalizer.js";
 
 type View = "somafm" | "search" | "favorites";
 
@@ -98,12 +99,15 @@ export class RadioPlayerElement extends LitElement {
   @state() private _query     = "";
   @state() private _searching = false;
   @state() private _loading   = false;
-  @state() private _audioError = "";
+  @state() private _audioError       = "";
   @state() private _current: RadioStation | null = null;
-  @state() private _playing  = false;
-  @state() private _volume   = 1.0;
+  @state() private _playing          = false;
+  @state() private _volume           = 1.0;
+  @state() private _normalizeOn      = false;
+  @state() private _normalizeBlocked = false;
 
-  private readonly _audio = new Audio();
+  private readonly _audio      = new Audio();
+  private readonly _normalizer = new VolumeNormalizer();
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -123,6 +127,28 @@ export class RadioPlayerElement extends LitElement {
     super.disconnectedCallback();
     this._audio.pause();
     this._audio.src = "";
+    this._normalizer.disconnect();
+  }
+
+  private _connectNormalizer(): void {
+    if (!VolumeNormalizer.isSameOrigin(this._audio.src)) {
+      this._normalizeBlocked = true; this._normalizer.disable(); return;
+    }
+    if (this._normalizer.blocked) { this._normalizeBlocked = true; return; }
+    const ok = this._normalizer.connect(this._audio);
+    this._normalizeBlocked = !ok;
+    if (ok && this._normalizeOn) this._normalizer.enable();
+  }
+
+  private _toggleNormalize(): void {
+    if (this._normalizeBlocked) return;
+    this._normalizeOn = !this._normalizeOn;
+    if (this._normalizeOn) {
+      this._connectNormalizer();
+      this._normalizer.enable();
+    } else {
+      this._normalizer.disable();
+    }
   }
 
   // ---- data fetching ----
@@ -362,6 +388,13 @@ export class RadioPlayerElement extends LitElement {
               <input type="range" min="0" max="100"
                      .value=${live(Math.round(this._volume * 100))}
                      @input=${this._onVolume} />
+              <button @click=${this._toggleNormalize}
+                      title=${this._normalizeBlocked ? t("player.normalize-blocked") : ""}
+                      ?disabled=${this._normalizeBlocked}>
+                ${this._normalizeBlocked
+                  ? t("player.normalize-blocked")
+                  : this._normalizeOn ? t("player.normalizing") : t("player.normalize")}
+              </button>
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
+import { VolumeNormalizer } from "../../audio/normalizer.js";
 
 type SortKey = "title" | "artist" | "album" | "year";
 const SORT_KEYS: SortKey[] = ["artist", "album", "title", "year"];
@@ -101,11 +102,14 @@ export class SubsonicPlayerElement extends LitElement {
   @state() private _playing = false;
   @state() private _elapsed  = 0;
   @state() private _duration = 0;
-  @state() private _volume   = 1.0;
-  @state() private _audioError = "";
+  @state() private _volume           = 1.0;
+  @state() private _audioError       = "";
+  @state() private _normalizeOn      = false;
+  @state() private _normalizeBlocked = false;
 
   // Hidden <audio> element; src is set to a Subsonic stream URL per track.
-  private readonly _audio = new Audio();
+  private readonly _audio      = new Audio();
+  private readonly _normalizer = new VolumeNormalizer();
 
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -139,6 +143,28 @@ export class SubsonicPlayerElement extends LitElement {
     this._stopPolling();
     this._audio.pause();
     this._audio.src = "";
+    this._normalizer.disconnect();
+  }
+
+  private _connectNormalizer(): void {
+    if (!VolumeNormalizer.isSameOrigin(this._audio.src)) {
+      this._normalizeBlocked = true; this._normalizer.disable(); return;
+    }
+    if (this._normalizer.blocked) { this._normalizeBlocked = true; return; }
+    const ok = this._normalizer.connect(this._audio);
+    this._normalizeBlocked = !ok;
+    if (ok && this._normalizeOn) this._normalizer.enable();
+  }
+
+  private _toggleNormalize(): void {
+    if (this._normalizeBlocked) return;
+    this._normalizeOn = !this._normalizeOn;
+    if (this._normalizeOn) {
+      this._connectNormalizer();
+      this._normalizer.enable();
+    } else {
+      this._normalizer.disable();
+    }
   }
 
   // ---- polling ----
@@ -459,6 +485,13 @@ export class SubsonicPlayerElement extends LitElement {
               <span>${t("player.volume")}</span>
               <input type="range" min="0" max="100"
                      .value=${live(volumePct)} @input=${this._onVolume} />
+              <button @click=${this._toggleNormalize}
+                      title=${this._normalizeBlocked ? t("player.normalize-blocked") : ""}
+                      ?disabled=${this._normalizeBlocked}>
+                ${this._normalizeBlocked
+                  ? t("player.normalize-blocked")
+                  : this._normalizeOn ? t("player.normalizing") : t("player.normalize")}
+              </button>
             </div>
           </div>
         ` : nothing}

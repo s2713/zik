@@ -14,12 +14,13 @@ Offline download flow:
 """
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
 import secrets
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
@@ -28,8 +29,8 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.routing import Route
 
-from ..files.db import LibraryDB
 from ...storage.quota import DEFAULT_LIMIT, QUOTA_KEY, disk_usage
+from ..files.db import LibraryDB
 
 logger = logging.getLogger(__name__)
 
@@ -180,8 +181,10 @@ async def _download_worker(
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = audio_path.with_suffix(".tmp")
     try:
-        async with httpx.AsyncClient(timeout=None, follow_redirects=True) as c:
-            async with c.stream("GET", audio_url, headers={"User-Agent": _UA}) as r:
+        async with (
+            httpx.AsyncClient(timeout=None, follow_redirects=True) as c,
+            c.stream("GET", audio_url, headers={"User-Agent": _UA}) as r,
+        ):
                 r.raise_for_status()
                 total = int(r.headers.get("content-length", 0))
                 received = 0
@@ -219,7 +222,9 @@ class _DownloadManager:
         queue: asyncio.Queue = asyncio.Queue()
         self._tasks[task_id] = queue
         asyncio.create_task(
-            _download_worker(queue, audio_url, audio_path, meta_path, meta, limit_bytes, offline_dir)
+            _download_worker(
+                queue, audio_url, audio_path, meta_path, meta, limit_bytes, offline_dir,
+            )
         )
 
     def get(self, task_id: str) -> asyncio.Queue | None:
@@ -348,7 +353,7 @@ def make_podcasts_router(db: LibraryDB, offline_dir: Path) -> list:
             "duration":    episode.get("duration", 0),
             "mime":        episode.get("mime", "audio/mpeg"),
             "local_url":   f"/api/podcasts/episodes/saved/{feed_slug}/{ep_slug}",
-            "downloaded_at": datetime.now(tz=timezone.utc).isoformat(),
+            "downloaded_at": datetime.now(tz=UTC).isoformat(),
         }
 
         task_id = secrets.token_urlsafe(16)
@@ -399,10 +404,8 @@ def make_podcasts_router(db: LibraryDB, offline_dir: Path) -> list:
         result = []
         if pod_dir.exists():
             for meta_file in sorted(pod_dir.rglob("*.json")):
-                try:
+                with contextlib.suppress(Exception):
                     result.append(json.loads(meta_file.read_text()))
-                except Exception:
-                    pass
         return JSONResponse(result)
 
     async def serve_saved(request: Request) -> FileResponse | JSONResponse:
@@ -415,10 +418,8 @@ def make_podcasts_router(db: LibraryDB, offline_dir: Path) -> list:
             return JSONResponse({"error": "not found"}, status_code=404)
         # Read mime from sidecar if available, else default.
         media_type = "audio/mpeg"
-        try:
+        with contextlib.suppress(Exception):
             media_type = json.loads(meta_path.read_text()).get("mime", media_type)
-        except Exception:
-            pass
         return FileResponse(audio_path, media_type=media_type)
 
     async def delete_saved(request: Request) -> JSONResponse:
