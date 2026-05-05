@@ -19,6 +19,7 @@ class LibrespotProcess:
 
     def __init__(self) -> None:
         self._proc: asyncio.subprocess.Process | None = None
+        self.last_error: str = ""   # last notable error line from stderr
 
     @property
     def available(self) -> bool:
@@ -58,11 +59,43 @@ class LibrespotProcess:
             )
             logger.info("librespot: started (pid %d, device '%s')",
                         self._proc.pid, DEVICE_NAME)
+            # Drain stderr continuously; without this, the 64 KB pipe buffer
+            # fills up, librespot blocks on its next write, and audio stops.
+            asyncio.create_task(self._drain_stderr())
             return True
         except OSError as exc:
             logger.warning("librespot: failed to start: %s", exc)
             self._proc = None
             return False
+
+    async def _drain_stderr(self) -> None:
+        """Read librespot stderr line-by-line; forward warnings to the backend log.
+
+        Also sets self.last_error for playback-blocking failures (e.g. keymaster
+        403 = Premium required or client blocked) so the status API can expose them.
+        """
+        if not self._proc or not self._proc.stderr:
+            return
+        try:
+            async for raw in self._proc.stderr:
+                line = raw.decode(errors="replace").rstrip()
+                if not line:
+                    continue
+                ll = line.lower()
+                if any(k in ll for k in ("error", "warn", "fatal", "panic")):
+                    logger.warning("librespot: %s", line)
+                    if "keymaster" in ll and "403" in line:
+                        self.last_error = (
+                            "Spotify denied audio access (keymaster 403). "
+                            "Spotify Premium is required for local playback, "
+                            "and librespot's client may be restricted by Spotify."
+                        )
+                    elif "unable to load audio item" in ll:
+                        self.last_error = "Unable to load audio — track may be unavailable or Premium required."
+                else:
+                    logger.debug("librespot: %s", line)
+        except Exception:
+            pass
 
     async def stop(self) -> None:
         """Terminate the librespot process if running."""
@@ -73,4 +106,5 @@ class LibrespotProcess:
             except TimeoutError:
                 self._proc.kill()
             logger.info("librespot: stopped")
-        self._proc = None
+        self._proc      = None
+        self.last_error = ""

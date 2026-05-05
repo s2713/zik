@@ -69,6 +69,10 @@ export class SpotifyPlayerElement extends LitElement {
     .empty { color: #888; font-size: 0.9em; margin: 1rem 0; }
     .time { font-size: 0.8em; color: #555; font-variant-numeric: tabular-nums; }
 
+    .error-strip { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;
+                   border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.85em;
+                   margin-bottom: 0.5rem; }
+
     .now-playing { border-top: 2px solid #ccc; padding-top: 0.75rem; }
     .np-title { font-weight: bold; margin-bottom: 0.2rem; }
     .np-sub { font-size: 0.85em; color: #555; margin-bottom: 0.4rem; }
@@ -82,6 +86,7 @@ export class SpotifyPlayerElement extends LitElement {
   @state() private _librespotAvailable = false;
   @state() private _librespotRunning   = false;
   @state() private _librespotDevice    = "";
+  @state() private _librespotError     = "";
   @state() private _playing     = false;
   @state() private _progressMs  = 0;
   @state() private _durationMs  = 0;
@@ -91,7 +96,8 @@ export class SpotifyPlayerElement extends LitElement {
   @state() private _track: SpotifyTrack | null = null;
   @state() private _library:   SpotifyTrack[] = [];
   @state() private _devices:   SpotifyDevice[] = [];
-  @state() private _showDevices = false;
+  @state() private _showDevices  = false;
+  @state() private _commandError = "";
   @state() private _sort: SortKey = "artist";
   @state() private _filter = "";
 
@@ -129,6 +135,7 @@ export class SpotifyPlayerElement extends LitElement {
         librespot_available: boolean;
         librespot_running: boolean;
         librespot_device?: string;
+        librespot_error?: string;
         playing?: boolean;
         progress_ms?: number;
         volume_pct?: number;
@@ -140,6 +147,7 @@ export class SpotifyPlayerElement extends LitElement {
       this._librespotAvailable  = data.librespot_available;
       this._librespotRunning    = data.librespot_running;
       this._librespotDevice     = data.librespot_device ?? "";
+      this._librespotError      = data.librespot_error  ?? "";
       if (data.authed) {
         this._playing    = data.playing    ?? false;
         this._progressMs = data.progress_ms ?? 0;
@@ -182,15 +190,21 @@ export class SpotifyPlayerElement extends LitElement {
 
   private async _command(type: string, extra: Record<string, unknown> = {}): Promise<void> {
     try {
-      await fetch("/api/spotify/command", {
+      const r = await fetch("/api/spotify/command", {
         method: "POST",
         headers: { "content-type": "application/json", ...getCsrfHeaders() },
         body: JSON.stringify({ type, device_id: this._deviceId, ...extra }),
       });
+      if (!r.ok) {
+        const data = await r.json() as { error?: string };
+        this._commandError = data.error ?? `HTTP ${r.status}`;
+        return;
+      }
+      this._commandError = "";
       // Refresh status shortly after so UI reflects the change.
       setTimeout(() => { void this._fetchStatus(); }, 300);
     } catch (err) {
-      console.error("spotify: command failed", err);
+      this._commandError = (err as Error).message;
     }
   }
 
@@ -246,6 +260,14 @@ export class SpotifyPlayerElement extends LitElement {
     // Spotify API accepts up to ~250 URIs; send all displayed tracks starting at index.
     const idx  = playlist.findIndex((t) => t.uri === track.uri);
     const uris = playlist.slice(idx).map((t) => t.uri);
+    // Always resolve the librespot device ID fresh: _deviceId from status comes from
+    // current_playback() which returns empty when nothing is playing, and librespot
+    // gets a new device ID on each restart — so the cached ID can be stale or absent.
+    if (this._librespotRunning) {
+      await this._fetchDevices();
+      const dev = this._devices.find((d) => d.name === this._librespotDevice);
+      if (dev) this._deviceId = dev.id;
+    }
     await this._command("Play", { uris });
   }
 
@@ -332,6 +354,9 @@ export class SpotifyPlayerElement extends LitElement {
           ${this._librespotRunning && !isLocalActive ? html`
             <button @click=${() => void this._useLocalDevice()}>${t("spotify.use-this-device")}</button>
           ` : nothing}
+          ${this._librespotError ? html`
+            <div class="error-strip">${this._librespotError}</div>
+          ` : nothing}
         </div>
       ` : nothing}
 
@@ -404,6 +429,11 @@ export class SpotifyPlayerElement extends LitElement {
               </table>
             `
         }
+
+        <!-- command error -->
+        ${this._commandError ? html`
+          <div class="error-strip">${this._commandError}</div>
+        ` : nothing}
 
         <!-- now-playing panel -->
         ${this._track ? html`

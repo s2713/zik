@@ -130,6 +130,7 @@ def make_spotify_router(
             "authed":              True,
             "librespot_available": librespot.available,
             "librespot_running":   librespot.running,
+            "librespot_error":     librespot.last_error,
             "playing":             pb.get("is_playing", False),
             "progress_ms":         pb.get("progress_ms", 0),
             "volume_pct":          device.get("volume_percent", 100),

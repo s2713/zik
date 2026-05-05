@@ -73,10 +73,11 @@ def _mock_api(authed: bool = False) -> MagicMock:
 def _mock_ls(running: bool = False) -> MagicMock:
     """Return a MagicMock LibrespotProcess."""
     ls = MagicMock()
-    ls.available = True
-    ls.running   = running
-    ls.start     = AsyncMock(return_value=True)
-    ls.stop      = AsyncMock()
+    ls.available  = True
+    ls.running    = running
+    ls.last_error = ""
+    ls.start      = AsyncMock(return_value=True)
+    ls.stop       = AsyncMock()
     return ls
 
 
