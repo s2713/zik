@@ -1,9 +1,10 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
+import { PlayerBase } from "../../player-base.js";
 import { DemoPlayer, type PlayerState, TRACKS } from "./player.js";
 
 /**
@@ -11,7 +12,7 @@ import { DemoPlayer, type PlayerState, TRACKS } from "./player.js";
  * Renders controls for a Web Audio sine-wave player and syncs state to the backend.
  */
 @customElement("demo-player")
-export class DemoPlayerElement extends LitElement {
+export class DemoPlayerElement extends PlayerBase {
   static styles = css`
     :host { display: block; font-family: sans-serif; padding: 1rem; max-width: 500px; }
     .track  { font-weight: bold; margin-bottom: 0.25rem; }

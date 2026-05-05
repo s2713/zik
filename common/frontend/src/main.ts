@@ -1,3 +1,5 @@
+import "./power-bar.js";      // registers <power-bar>
+import "./screen-lock.js";    // registers <screen-lock>
 import { ensureCsrfToken } from "./csrf.js";
 import {
   SUPPORTED_LANGS,
@@ -45,12 +47,31 @@ function _applyVisibility(visible: Set<string>): void {
   }
 }
 
+function mountPowerBar(): void {
+  // Inserted between lang-bar and service-bar; idempotent.
+  if (document.querySelector("power-bar")) return;
+  const bar = document.createElement("power-bar");
+  const langBar = document.getElementById("lang-bar");
+  if (langBar?.nextSibling) {
+    document.body.insertBefore(bar, langBar.nextSibling);
+  } else {
+    document.body.appendChild(bar);
+  }
+}
+
+function mountScreenLock(): void {
+  if (document.querySelector("screen-lock")) return;
+  document.body.appendChild(document.createElement("screen-lock"));
+}
+
 async function init(): Promise<void> {
   await loadMessages();
   await ensureCsrfToken(); // fetch CSRF cookie before any POST
   renderLanguagePicker();
+  mountPowerBar();
   mountPlayer();
   renderServiceToggles();
+  mountScreenLock();
   await checkHealth();
 }
 
@@ -98,7 +119,7 @@ function renderServiceToggles(): void {
   _applyVisibility(visible);
 
   const label = document.createElement("span");
-  label.textContent = "Services:";
+  label.textContent = t("app.services-label");
   label.style.cssText = "align-self:center;color:#666;";
   bar.appendChild(label);
 

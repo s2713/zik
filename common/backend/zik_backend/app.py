@@ -15,6 +15,7 @@ from starlette.websockets import WebSocket
 from .helper_client import HelperClient
 from .middleware import CsrfDoubleSubmitMiddleware, OriginCheckMiddleware
 from .player import PlayerManager, state_as_dict
+from .power import make_power_router
 from .services.files.db import LibraryDB
 from .services.files.routes import make_files_router
 from .services.files.sources import Source, SourceManager
@@ -261,6 +262,7 @@ def make_app(
             *make_podcasts_router(library_db, _offline_dir),
             *make_quota_router(library_db, _offline_dir),
             *make_radio_router(library_db),
+            *make_power_router(),
         ],
         lifespan=_lifespan,
     )

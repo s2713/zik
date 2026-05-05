@@ -1,10 +1,11 @@
-import { LitElement, css, html, nothing } from "lit";
+import { css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
 import { VolumeNormalizer } from "../../audio/normalizer.js";
+import { PlayerBase } from "../../player-base.js";
 
 type View = "somafm" | "search" | "favorites";
 
@@ -38,7 +39,7 @@ interface Tag {
  * No seek or duration display — live streams are not seekable.
  */
 @customElement("radio-player")
-export class RadioPlayerElement extends LitElement {
+export class RadioPlayerElement extends PlayerBase {
   static styles = css`
     :host { display: block; font-family: sans-serif; padding: 1rem; max-width: 700px; }
     h3 { margin: 0 0 0.5rem; }

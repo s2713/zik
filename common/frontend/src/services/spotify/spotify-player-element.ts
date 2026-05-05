@@ -1,9 +1,10 @@
-import { LitElement, css, html, nothing } from "lit";
+import { css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
+import { PlayerBase } from "../../player-base.js";
 
 type SortKey = "title" | "artist" | "album" | "year";
 const SORT_KEYS: SortKey[] = ["artist", "album", "title", "year"];
@@ -29,7 +30,7 @@ interface SpotifyDevice {
  * Web API commands routed through the backend. librespot acts as local device.
  */
 @customElement("spotify-player")
-export class SpotifyPlayerElement extends LitElement {
+export class SpotifyPlayerElement extends PlayerBase {
   static styles = css`
     :host { display: block; font-family: sans-serif; padding: 1rem; max-width: 700px; }
     h3 { margin: 0 0 0.5rem; }

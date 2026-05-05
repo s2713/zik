@@ -110,6 +110,16 @@
   "quota.label":                 { "en": "Offline storage",                "fr": "Stockage hors-ligne" },
   "quota.of":                    { "en": "of",                             "fr": "sur" },
 
+  "app.services-label":          { "en": "Services:",                     "fr": "Services :" },
+
+  "screen.locking":            { "en": "Locking & turning off screen",  "fr": "Verrouillage & extinction de l'écran" },
+  "screen.click-to-unlock":    { "en": "Click or press any key to unlock", "fr": "Cliquez ou appuyez sur une touche pour déverrouiller" },
+
+  "power.poweroff":            { "en": "Power off",                     "fr": "Éteindre" },
+  "power.suspend":             { "en": "Suspend",                       "fr": "Veille" },
+  "power.hibernate":           { "en": "Hibernate",                     "fr": "Hibernation" },
+  "power.simulated":           { "en": "Simulated: would {action} the device", "fr": "Simulé : appareil en {action}" },
+
   "service.radio":               { "en": "Radio",                         "fr": "Radio" },
   "radio.search":                { "en": "Search",                        "fr": "Rechercher" },
   "radio.search-placeholder":    { "en": "Station name…",                 "fr": "Nom de la station…" },

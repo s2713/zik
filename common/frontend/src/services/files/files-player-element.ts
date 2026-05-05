@@ -1,10 +1,11 @@
-import { LitElement, css, html, nothing } from "lit";
+import { css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
 import { VolumeNormalizer } from "../../audio/normalizer.js";
+import { PlayerBase } from "../../player-base.js";
 import { FilesPlayer, type FileTrack, type FilesPlayerState } from "./files-player.js";
 
 type SortKey = "artist" | "album" | "title" | "genre" | "year";
@@ -32,7 +33,7 @@ interface LanForm {
  * Shows a sources strip (mount/unmount/add LAN), a sortable library table, and a now-playing panel.
  */
 @customElement("files-player")
-export class FilesPlayerElement extends LitElement {
+export class FilesPlayerElement extends PlayerBase {
   static styles = css`
     :host { display: block; font-family: sans-serif; padding: 1rem; max-width: 700px; }
     h3 { margin: 0 0 0.5rem; }

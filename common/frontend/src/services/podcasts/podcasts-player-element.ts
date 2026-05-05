@@ -1,10 +1,11 @@
-import { LitElement, TemplateResult, css, html, nothing } from "lit";
+import { TemplateResult, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
 import { VolumeNormalizer } from "../../audio/normalizer.js";
+import { PlayerBase } from "../../player-base.js";
 
 interface PodcastFeed {
   url:    string;
@@ -53,7 +54,7 @@ function _fmtBytes(n: number): string {
  * Episodes can be saved for offline playback (progress tracked via SSE).
  */
 @customElement("podcasts-player")
-export class PodcastsPlayerElement extends LitElement {
+export class PodcastsPlayerElement extends PlayerBase {
   static styles = css`
     :host { display: block; font-family: sans-serif; padding: 1rem; max-width: 700px; }
     h3 { margin: 0 0 0.5rem; }
