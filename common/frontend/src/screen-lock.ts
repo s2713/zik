@@ -1,16 +1,21 @@
 import { css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
+import { getCsrfHeaders } from "./csrf.js";
 import { t } from "./i18n/i18n.js";
 import { PlayerBase } from "./player-base.js";
+import { USER_CHANGED_EVENT, currentUser, listUsers, setCurrentUser } from "./session.js";
 
 /** Possible lock states: hidden, showing locking message, fully locked. */
 type LockState = "idle" | "locking" | "locked";
 
+/** Custom event name for triggering a lock from outside (e.g. the power bar Lock button). */
+export const LOCK_REQUEST_EVENT = "zik-lock-request";
+
 /**
  * Full-viewport screen-lock overlay.
- * Mounts on <body>; tracks user activity and locks after `timeout` idle seconds.
- * Click or keydown on the overlay unlocks (demo: no auth; production: M16 login).
+ * In locked state renders a user-picker; selecting a different user switches sessions.
+ * Selecting the same user unlocks directly.
  */
 @customElement("screen-lock")
 export class ScreenLockElement extends PlayerBase {
@@ -19,7 +24,7 @@ export class ScreenLockElement extends PlayerBase {
       position: fixed;
       inset: 0;
       z-index: 9999;
-      pointer-events: none; /* idle: pass events through */
+      pointer-events: none;
     }
     .overlay {
       position: absolute;
@@ -28,28 +33,41 @@ export class ScreenLockElement extends PlayerBase {
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 1.5rem;
       background: #000;
       color: #eee;
       font-family: sans-serif;
-      pointer-events: all; /* capture all input when visible */
+      pointer-events: all;
       opacity: 0;
       transition: opacity 1s ease-in;
-      cursor: pointer;
     }
     .overlay.locking,
-    .overlay.locked {
-      opacity: 1;
-    }
+    .overlay.locked { opacity: 1; }
     .clock {
       font-size: 4rem;
       font-weight: 300;
       letter-spacing: 0.1em;
-      margin-bottom: 1rem;
     }
-    .msg {
-      font-size: 0.95rem;
-      color: #aaa;
+    .locking-msg { font-size: 0.95rem; color: #aaa; }
+    .pick-label  { font-size: 0.85rem; color: #888; letter-spacing: 0.05em; text-transform: uppercase; }
+    .users {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
     }
+    .user-btn {
+      padding: 0.5rem 1.4rem;
+      border: 1px solid #444;
+      border-radius: 6px;
+      background: #111;
+      color: #ddd;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .user-btn:hover  { background: #222; border-color: #777; }
+    .user-btn.active { border-color: #0057b8; color: #fff; }
   `;
 
   /** Idle timeout in seconds before locking. */
@@ -60,28 +78,30 @@ export class ScreenLockElement extends PlayerBase {
 
   @state() private _lockState: LockState = "idle";
   @state() private _clock = "";
+  @state() private _users: string[] = [];
 
-  private _idleTimer: ReturnType<typeof setTimeout> | null = null;
-  private _lockTimer: ReturnType<typeof setTimeout> | null = null;
+  private _idleTimer:     ReturnType<typeof setTimeout>  | null = null;
+  private _lockTimer:     ReturnType<typeof setTimeout>  | null = null;
   private _clockInterval: ReturnType<typeof setInterval> | null = null;
 
-  // Arrow-function refs so the same instances are removed in disconnectedCallback.
   private readonly _onActivity = (): void => {
-    if (this._lockState === "locked") return;
-    if (this._lockState === "locking") { this._unlock(); return; }
+    if (this._lockState === "locked")  return;
+    if (this._lockState === "locking") { this._cancelLock(); return; }
     this._resetIdleTimer();
   };
   private readonly _onKeydown = (): void => {
-    if (this._lockState === "locked") { this._unlock(); return; }
-    this._onActivity();
+    // Keydown does not unlock in locked state — user must click a name button.
+    if (this._lockState !== "locked") this._onActivity();
   };
+  private readonly _onLockRequest = (): void => { void this._startLocking(); };
 
   override connectedCallback(): void {
     super.connectedCallback();
-    document.addEventListener("mousemove", this._onActivity, { passive: true });
-    document.addEventListener("click",     this._onActivity);
-    document.addEventListener("touchstart",this._onActivity, { passive: true });
-    document.addEventListener("keydown",   this._onKeydown);
+    document.addEventListener("mousemove",  this._onActivity,    { passive: true });
+    document.addEventListener("click",      this._onActivity);
+    document.addEventListener("touchstart", this._onActivity,    { passive: true });
+    document.addEventListener("keydown",    this._onKeydown);
+    window.addEventListener(LOCK_REQUEST_EVENT, this._onLockRequest);
     this._resetIdleTimer();
   }
 
@@ -91,6 +111,7 @@ export class ScreenLockElement extends PlayerBase {
     document.removeEventListener("click",      this._onActivity);
     document.removeEventListener("touchstart", this._onActivity);
     document.removeEventListener("keydown",    this._onKeydown);
+    window.removeEventListener(LOCK_REQUEST_EVENT, this._onLockRequest);
     this._clearTimers();
   }
 
@@ -101,22 +122,46 @@ export class ScreenLockElement extends PlayerBase {
   }
 
   private _clearTimers(): void {
-    if (this._idleTimer !== null)   { clearTimeout(this._idleTimer);    this._idleTimer   = null; }
-    if (this._lockTimer !== null)   { clearTimeout(this._lockTimer);    this._lockTimer   = null; }
+    if (this._idleTimer     !== null) { clearTimeout(this._idleTimer);      this._idleTimer     = null; }
+    if (this._lockTimer     !== null) { clearTimeout(this._lockTimer);      this._lockTimer     = null; }
     if (this._clockInterval !== null) { clearInterval(this._clockInterval); this._clockInterval = null; }
   }
 
-  private _startLocking(): void {
+  private async _startLocking(): Promise<void> {
     this._updateClock();
     this._lockState = "locking";
-    // Start clock tick so the time is live when the locked screen shows.
     this._clockInterval = setInterval(() => this._updateClock(), 1000);
-    // After 1s fade + 0.5s message read → go fully locked.
-    this._lockTimer = setTimeout(() => { this._lockState = "locked"; }, 1500);
+    this._lockTimer = setTimeout(() => void this._goLocked(), 1500);
     this.dispatchEvent(new CustomEvent("zik-locked", { bubbles: true }));
   }
 
-  private _unlock(): void {
+  private async _goLocked(): Promise<void> {
+    this._users = await listUsers();
+    this._lockState = "locked";
+  }
+
+  private _cancelLock(): void {
+    // Abort a lock that is still in the fade-in animation.
+    this._lockState = "idle";
+    this._clearTimers();
+    this._resetIdleTimer();
+  }
+
+  private async _selectUser(name: string): Promise<void> {
+    const prev = currentUser();
+    try {
+      await fetch("/api/session/login", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({ username: name }),
+      });
+    } catch { /* ignore; local state still updates */ }
+    setCurrentUser(name);
+    if (name !== prev) {
+      // Different user — fire USER_CHANGED_EVENT (already done by setCurrentUser)
+      // so main.ts and user-account re-render for the new user.
+      window.dispatchEvent(new CustomEvent(USER_CHANGED_EVENT, { detail: name }));
+    }
     this._lockState = "idle";
     this._clearTimers();
     this._resetIdleTimer();
@@ -133,14 +178,29 @@ export class ScreenLockElement extends PlayerBase {
   override render() {
     if (this._lockState === "idle") return nothing;
 
-    const msg = this._lockState === "locking"
-      ? t("screen.locking")
-      : t("screen.click-to-unlock");
+    if (this._lockState === "locking") {
+      return html`
+        <div class="overlay locking">
+          <div class="clock">${this._clock}</div>
+          <div class="locking-msg">${t("screen.locking")}</div>
+        </div>
+      `;
+    }
 
+    // Locked: show user-picker.
+    const active = currentUser();
     return html`
-      <div class="overlay ${this._lockState}" @click=${() => this._unlock()}>
+      <div class="overlay locked">
         <div class="clock">${this._clock}</div>
-        <div class="msg">${msg}</div>
+        <div class="pick-label">${t("screen.pick-user")}</div>
+        <div class="users">
+          ${this._users.map((name) => html`
+            <button class="user-btn ${name === active ? "active" : ""}"
+                    @click=${() => void this._selectUser(name)}>
+              ${name}
+            </button>
+          `)}
+        </div>
       </div>
     `;
   }

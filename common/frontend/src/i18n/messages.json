@@ -128,7 +128,10 @@
   "account.simulated":         { "en": "(simulated in demo)",           "fr": "(simulé en démo)" },
 
   "screen.locking":            { "en": "Locking & turning off screen",  "fr": "Verrouillage & extinction de l'écran" },
-  "screen.click-to-unlock":    { "en": "Click or press any key to unlock", "fr": "Cliquez ou appuyez sur une touche pour déverrouiller" },
+  "screen.pick-user":          { "en": "Who are you?",                 "fr": "Qui êtes-vous ?" },
+
+  "session.logged-in-as":      { "en": "▸ {user}",                    "fr": "▸ {user}" },
+  "session.lock":              { "en": "Lock",                         "fr": "Verrouiller" },
 
   "power.poweroff":            { "en": "Power off",                     "fr": "Éteindre" },
   "power.suspend":             { "en": "Suspend",                       "fr": "Veille" },

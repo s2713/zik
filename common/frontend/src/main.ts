@@ -3,6 +3,7 @@ import "./screen-lock.js";    // registers <screen-lock>
 import "./user-account.js";   // registers <user-account>
 import { SERVICES_CHANGED_EVENT } from "./user-account.js";
 import { ensureCsrfToken } from "./csrf.js";
+import { USER_CHANGED_EVENT, currentUser, loadSession } from "./session.js";
 import {
   SUPPORTED_LANGS,
   getLanguage,
@@ -28,18 +29,19 @@ const _SERVICES: Array<{ tag: string; i18nKey: string }> = [
   { tag: "radio-player",    i18nKey: "service.radio"    },
 ];
 
-const _VISIBLE_KEY = "zik-demo.visible-services";
+/** Per-user localStorage key so each user's service visibility is independent. */
+function _visibleKey(): string { return `zik-demo.${currentUser()}.visible-services`; }
 
 function _loadVisible(): Set<string> {
   try {
-    const raw = localStorage.getItem(_VISIBLE_KEY);
+    const raw = localStorage.getItem(_visibleKey());
     if (raw) return new Set(JSON.parse(raw) as string[]);
   } catch { /* ignore */ }
   return new Set(_SERVICES.map((s) => s.tag)); // default: all visible
 }
 
 function _saveVisible(visible: Set<string>): void {
-  localStorage.setItem(_VISIBLE_KEY, JSON.stringify([...visible]));
+  localStorage.setItem(_visibleKey(), JSON.stringify([...visible]));
 }
 
 function _applyVisibility(visible: Set<string>): void {
@@ -80,15 +82,17 @@ function mountAccountPanel(): void {
 
 async function init(): Promise<void> {
   await loadMessages();
-  await ensureCsrfToken(); // fetch CSRF cookie before any POST
+  await ensureCsrfToken();    // fetch CSRF cookie before any POST
+  await loadSession();        // initialise currentUser() before any localStorage access
   renderLanguagePicker();
   mountPowerBar();
   mountPlayer();
   renderServiceToggles();
   mountAccountPanel();
   mountScreenLock();
-  // Re-render service bar whenever the account panel toggles a service.
+  // Re-render service bar when service visibility or active user changes.
   window.addEventListener(SERVICES_CHANGED_EVENT, () => renderServiceToggles());
+  window.addEventListener(USER_CHANGED_EVENT,     () => renderServiceToggles());
   await checkHealth();
 }
 

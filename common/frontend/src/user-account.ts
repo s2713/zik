@@ -4,6 +4,7 @@ import { customElement, state } from "lit/decorators.js";
 import { getCsrfHeaders } from "./csrf.js";
 import { t } from "./i18n/i18n.js";
 import { PlayerBase } from "./player-base.js";
+import { USER_CHANGED_EVENT, currentUser } from "./session.js";
 
 /** Event dispatched on window when service visibility changes from this panel. */
 export const SERVICES_CHANGED_EVENT = "zik-services-changed";
@@ -19,31 +20,32 @@ const _SERVICES: Array<{ tag: string; i18nKey: string }> = [
   { tag: "radio-player",    i18nKey: "service.radio"    },
 ];
 
-const _VISIBLE_KEY  = "zik-demo.visible-services";
-const _SHARE_KEY    = "zik-demo.share-with-admin";  // Set<service-tag> persisted in localStorage
+/** Returns per-user localStorage keys so each user's prefs are independent. */
+function _visibleKey(): string { return `zik-demo.${currentUser()}.visible-services`; }
+function _shareKey():   string { return `zik-demo.${currentUser()}.share-with-admin`; }
 
 function _loadVisible(): Set<string> {
   try {
-    const raw = localStorage.getItem(_VISIBLE_KEY);
+    const raw = localStorage.getItem(_visibleKey());
     if (raw) return new Set(JSON.parse(raw) as string[]);
   } catch { /* ignore */ }
   return new Set(_SERVICES.map((s) => s.tag));
 }
 
 function _saveVisible(v: Set<string>): void {
-  localStorage.setItem(_VISIBLE_KEY, JSON.stringify([...v]));
+  localStorage.setItem(_visibleKey(), JSON.stringify([...v]));
 }
 
 function _loadShares(): Set<string> {
   try {
-    const raw = localStorage.getItem(_SHARE_KEY);
+    const raw = localStorage.getItem(_shareKey());
     if (raw) return new Set(JSON.parse(raw) as string[]);
   } catch { /* ignore */ }
-  return new Set(); // default: do not share
+  return new Set();
 }
 
 function _saveShares(s: Set<string>): void {
-  localStorage.setItem(_SHARE_KEY, JSON.stringify([...s]));
+  localStorage.setItem(_shareKey(), JSON.stringify([...s]));
 }
 
 /**
@@ -130,6 +132,24 @@ export class UserAccountElement extends PlayerBase {
   @state() private _pwConfirm  = "";
   @state() private _pwStatus: { ok: boolean; msg: string; simulated?: boolean } | null = null;
   @state() private _pwBusy = false;
+
+  // Reload per-user prefs when the active user changes.
+  private readonly _onUserChanged = (): void => {
+    this._visible  = _loadVisible();
+    this._shares   = _loadShares();
+    this._pwStatus = null;
+    window.dispatchEvent(new CustomEvent(SERVICES_CHANGED_EVENT));
+  };
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    window.addEventListener(USER_CHANGED_EVENT, this._onUserChanged);
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    window.removeEventListener(USER_CHANGED_EVENT, this._onUserChanged);
+  }
 
   private _toggleService(tag: string): void {
     const v = new Set(this._visible);
