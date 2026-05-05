@@ -39,10 +39,10 @@ def make_session_router(sessions: dict) -> list:
 
     async def lock(request: Request) -> JSONResponse:
         """Mark the current session as screen-locked."""
+        # Lock state is frontend-managed; backend record is best-effort.
         sid = request.cookies.get("__Host-zik-session")
-        if not sid or sid not in sessions:
-            return JSONResponse({"ok": False, "error": "no session"}, status_code=401)
-        sessions[sid]["locked"] = True
+        if sid and sid in sessions:
+            sessions[sid]["locked"] = True
         return JSONResponse({"ok": True})
 
     return [

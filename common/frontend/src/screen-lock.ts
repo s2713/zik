@@ -83,8 +83,13 @@ export class ScreenLockElement extends PlayerBase {
   private _idleTimer:     ReturnType<typeof setTimeout>  | null = null;
   private _lockTimer:     ReturnType<typeof setTimeout>  | null = null;
   private _clockInterval: ReturnType<typeof setInterval> | null = null;
+  // Suppresses _onActivity for one event-loop tick after a programmatic lock
+  // request, so the click that triggered the Lock button doesn't immediately
+  // cancel the lock via the document click listener.
+  private _lockProgrammatic = false;
 
   private readonly _onActivity = (): void => {
+    if (this._lockProgrammatic)        return;
     if (this._lockState === "locked")  return;
     if (this._lockState === "locking") { this._cancelLock(); return; }
     this._resetIdleTimer();
@@ -93,7 +98,12 @@ export class ScreenLockElement extends PlayerBase {
     // Keydown does not unlock in locked state — user must click a name button.
     if (this._lockState !== "locked") this._onActivity();
   };
-  private readonly _onLockRequest = (): void => { void this._startLocking(); };
+  private readonly _onLockRequest = (): void => {
+    this._lockProgrammatic = true;
+    void this._startLocking();
+    // Clear after the current event loop so the triggering click doesn't cancel.
+    setTimeout(() => { this._lockProgrammatic = false; }, 0);
+  };
 
   override connectedCallback(): void {
     super.connectedCallback();
