@@ -21,6 +21,7 @@ from .services.files.sources import Source, SourceManager
 from .services.mpd.client import MpdProxy
 from .services.mpd.routes import make_mpd_router
 from .services.podcasts.routes import make_podcasts_router
+from .services.quota.routes import make_quota_router
 from .services.radio.routes import make_radio_router
 from .services.spotify.api import SpotifyApi
 from .services.spotify.librespot import LibrespotProcess
@@ -90,6 +91,7 @@ def make_app(
     db_path: str | None = None,
     removable_root: str | None = None,
     spotify_client_id: str | None = None,
+    offline_dir: Path | None = None,
 ) -> Starlette:
     # Suppress high-frequency status polls from the access log.
     logging.getLogger("uvicorn.access").addFilter(
@@ -125,6 +127,11 @@ def make_app(
     source_manager = SourceManager(_sources)
     mpd_proxy      = MpdProxy()
     subsonic_proxy = SubsonicProxy()
+
+    _offline_dir = offline_dir or Path(
+        os.environ.get("ZIK_OFFLINE_DIR",
+                       str(Path.home() / ".local" / "share" / "zik" / "offline"))
+    )
 
     _spotify_client_id = (
         spotify_client_id or os.environ.get("ZIK_SPOTIFY_CLIENT_ID", "")
@@ -246,7 +253,8 @@ def make_app(
                 spotify_api, spotify_librespot, library_db,
                 _spotify_client_id, _redirect_uri, _frontend_url,
             ),
-            *make_podcasts_router(library_db),
+            *make_podcasts_router(library_db, _offline_dir),
+            *make_quota_router(library_db, _offline_dir),
             *make_radio_router(library_db),
         ],
         lifespan=_lifespan,

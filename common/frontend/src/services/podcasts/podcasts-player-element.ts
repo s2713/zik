@@ -1,4 +1,4 @@
-import { LitElement, css, html, nothing } from "lit";
+import { LitElement, TemplateResult, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 
@@ -26,10 +26,30 @@ interface PodcastDetail extends PodcastFeed {
   episodes:    PodcastEpisode[];
 }
 
+interface DownloadState {
+  received: number;
+  total:    number;      // 0 if server did not send Content-Length
+  error?:   string;
+}
+
+interface QuotaInfo {
+  used_bytes:  number;
+  limit_bytes: number;
+}
+
+/** Format bytes as a short human-readable string (e.g. "42.3 MB"). */
+function _fmtBytes(n: number): string {
+  if (n < 1024)                  return `${n} B`;
+  if (n < 1024 * 1024)          return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024)   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
 /**
  * Podcasts player element.
  * Saves subscribed RSS feed URLs in the backend DB; fetches and parses feeds
  * on demand; streams episode audio directly from enclosure URLs via <audio>.
+ * Episodes can be saved for offline playback (progress tracked via SSE).
  */
 @customElement("podcasts-player")
 export class PodcastsPlayerElement extends LitElement {
@@ -39,6 +59,15 @@ export class PodcastsPlayerElement extends LitElement {
 
     .toolbar { display: flex; gap: 0.5rem; align-items: center;
                flex-wrap: wrap; margin-bottom: 0.5rem; }
+
+    .quota-pill { font-size: 0.78em; color: #555; background: #f0f0f0;
+                  border: 1px solid #ddd; border-radius: 10px;
+                  padding: 0.15em 0.6em; display: flex; align-items: center; gap: 0.4rem; }
+    .quota-bar  { width: 60px; height: 6px; border-radius: 3px;
+                  background: #ccc; overflow: hidden; }
+    .quota-fill { height: 100%; background: #0057b8; border-radius: 3px; transition: width .3s; }
+    .quota-fill.warning { background: #c80; }
+    .quota-fill.danger  { background: #c00; }
 
     .add-form { background: #f0f8ff; border: 1px solid #b8d4f0; border-radius: 4px;
                 padding: 0.75rem; margin-bottom: 0.75rem; }
@@ -62,15 +91,36 @@ export class PodcastsPlayerElement extends LitElement {
     .feed-actions { display: flex; gap: 0.3rem; }
 
     .episode-list { margin-bottom: 0.75rem; }
-    .ep-row { display: flex; gap: 0.5rem; align-items: baseline;
-              padding: 0.3rem 0.4rem; border-bottom: 1px solid #eee;
-              cursor: pointer; }
+    .ep-row { display: flex; gap: 0.5rem; align-items: center;
+              padding: 0.3rem 0.4rem; border-bottom: 1px solid #eee; }
     .ep-row:hover { background: #f5f5f5; }
     .ep-row.playing { background: #e8f4ff; font-weight: bold; }
+    .ep-play { flex: 1; display: flex; gap: 0.4rem; align-items: baseline; cursor: pointer; }
     .ep-title { flex: 1; font-size: 0.88em; }
     .ep-date  { font-size: 0.78em; color: #666; white-space: nowrap; }
     .ep-dur   { font-size: 0.78em; color: #555; white-space: nowrap;
                 font-variant-numeric: tabular-nums; }
+    .ep-actions { display: flex; align-items: center; gap: 0.3rem; flex-shrink: 0; }
+    .ep-save-btn { font-size: 0.78em; padding: 0.1em 0.4em; border: 1px solid #bbb;
+                   border-radius: 3px; cursor: pointer; background: #f8f8f8; white-space: nowrap; }
+    .ep-save-btn.saved { color: #0a0; border-color: #0a0; background: #efffef; }
+    .ep-save-btn.error { color: #c00; border-color: #c00; }
+    .ep-offline-badge { font-size: 0.72em; color: #0057b8; }
+
+    /* Download progress bar — appears inside the episode row when a save is in flight */
+    .dl-progress { display: flex; align-items: center; gap: 0.4rem;
+                   font-size: 0.75em; color: #555; width: 100%;
+                   padding: 0.2rem 0.4rem; background: #f0f8ff;
+                   border-top: 1px solid #b8d4f0; }
+    .dl-bar-wrap { flex: 1; height: 6px; background: #dde; border-radius: 3px; overflow: hidden; }
+    .dl-bar      { height: 100%; background: #0057b8; border-radius: 3px;
+                   transition: width .2s; min-width: 3px; }
+    .dl-bar.indeterminate { width: 40% !important; animation: dl-pulse 1.2s ease-in-out infinite; }
+    @keyframes dl-pulse {
+      0%   { margin-left: 0%;   }
+      50%  { margin-left: 60%;  }
+      100% { margin-left: 0%;   }
+    }
 
     .audio-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;
                    border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.85em;
@@ -100,8 +150,15 @@ export class PodcastsPlayerElement extends LitElement {
   @state() private _duration     = 0;
   @state() private _volume       = 1.0;
   @state() private _audioError   = "";
+  // audio_url → local_url for all saved episodes
+  @state() private _saved:       Map<string, string> = new Map();
+  // audio_url → in-progress download state
+  @state() private _downloads:   Map<string, DownloadState> = new Map();
+  @state() private _quota:       QuotaInfo | null = null;
 
   private readonly _audio = new Audio();
+  // Keep EventSource refs so we can close them on disconnect.
+  private readonly _eventSources = new Map<string, EventSource>();
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -113,17 +170,22 @@ export class PodcastsPlayerElement extends LitElement {
     this._audio.addEventListener("pause", () => { this._playing = false; });
     this._audio.addEventListener("ended", () => { void this._playNext(); });
     this._audio.addEventListener("error", () => {
-      const err      = this._audio.error;
+      const err        = this._audio.error;
       this._audioError = err ? `Audio error ${err.code}: ${err.message}` : "Unknown audio error";
-      this._playing  = false;
+      this._playing    = false;
     });
     void this._fetchFeeds();
+    void this._fetchSaved();
+    void this._fetchQuota();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this._audio.pause();
     this._audio.src = "";
+    // Close any open SSE connections.
+    for (const es of this._eventSources.values()) es.close();
+    this._eventSources.clear();
   }
 
   // ---- feeds ----
@@ -138,7 +200,7 @@ export class PodcastsPlayerElement extends LitElement {
   private async _addFeed(): Promise<void> {
     const url = this._addUrl.trim();
     if (!url) return;
-    this._adding  = true;
+    this._adding   = true;
     this._addError = "";
     try {
       const r = await fetch("/api/podcasts/feeds", {
@@ -150,14 +212,13 @@ export class PodcastsPlayerElement extends LitElement {
       if (!r.ok) {
         this._addError = data.error ?? "Unknown error";
       } else {
-        this._addUrl    = "";
+        this._addUrl      = "";
         this._showAddForm = false;
         await this._fetchFeeds();
-        // Immediately show the newly subscribed feed's episodes.
         this._selected = data;
       }
     } catch { this._addError = "Network error"; }
-    finally  { this._adding = false; }
+    finally   { this._adding = false; }
   }
 
   private async _removeFeed(url: string, e: Event): Promise<void> {
@@ -172,16 +233,114 @@ export class PodcastsPlayerElement extends LitElement {
   }
 
   private async _selectFeed(feed: PodcastFeed): Promise<void> {
-    if (this._selected?.url === feed.url) {
-      this._selected = null;
-      return;
-    }
+    if (this._selected?.url === feed.url) { this._selected = null; return; }
     this._loadingFeed = true;
     try {
       const r = await fetch(`/api/podcasts/episodes?url=${encodeURIComponent(feed.url)}`);
       if (r.ok) this._selected = await r.json() as PodcastDetail;
     } catch { /* backend unavailable */ }
     finally { this._loadingFeed = false; }
+  }
+
+  // ---- offline save ----
+
+  private async _fetchSaved(): Promise<void> {
+    try {
+      const r = await fetch("/api/podcasts/episodes/saved");
+      if (r.ok) {
+        const list = await r.json() as Array<{ audio_url: string; local_url: string }>;
+        this._saved = new Map(list.map((m) => [m.audio_url, m.local_url]));
+      }
+    } catch { /* backend unavailable */ }
+  }
+
+  private async _fetchQuota(): Promise<void> {
+    try {
+      const r = await fetch("/api/quota");
+      if (r.ok) this._quota = await r.json() as QuotaInfo;
+    } catch { /* backend unavailable */ }
+  }
+
+  private async _saveEpisode(ep: PodcastEpisode, e: Event): Promise<void> {
+    e.stopPropagation();
+    const feedUrl = this._selected?.url ?? "";
+
+    const r = await fetch("/api/podcasts/episodes/save", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...getCsrfHeaders() },
+      body: JSON.stringify({ feed_url: feedUrl, episode: ep }),
+    });
+    const data = await r.json() as {
+      task_id?: string; already_saved?: boolean; local_url?: string; error?: string
+    };
+
+    if (!r.ok) {
+      // Show error inline on the episode row.
+      this._downloads = new Map(this._downloads).set(ep.url, {
+        received: 0, total: 0, error: data.error ?? `HTTP ${r.status}`,
+      });
+      return;
+    }
+
+    if (data.already_saved && data.local_url) {
+      this._saved = new Map(this._saved).set(ep.url, data.local_url);
+      return;
+    }
+
+    if (!data.task_id) return;
+
+    // Subscribe to SSE progress stream.
+    this._downloads = new Map(this._downloads).set(ep.url, { received: 0, total: 0 });
+    const es = new EventSource(`/api/podcasts/episodes/save/${data.task_id}`);
+    this._eventSources.set(ep.url, es);
+
+    es.onmessage = (ev: MessageEvent) => {
+      const msg = JSON.parse(ev.data as string) as {
+        type: string; received?: number; total?: number; local_url?: string; message?: string
+      };
+      if (msg.type === "progress") {
+        this._downloads = new Map(this._downloads).set(ep.url, {
+          received: msg.received ?? 0,
+          total:    msg.total    ?? 0,
+        });
+      } else if (msg.type === "done" && msg.local_url) {
+        es.close();
+        this._eventSources.delete(ep.url);
+        const dl = new Map(this._downloads);
+        dl.delete(ep.url);
+        this._downloads = dl;
+        this._saved = new Map(this._saved).set(ep.url, msg.local_url);
+        void this._fetchQuota();
+      } else if (msg.type === "error") {
+        es.close();
+        this._eventSources.delete(ep.url);
+        this._downloads = new Map(this._downloads).set(ep.url, {
+          received: 0, total: 0, error: msg.message ?? "Download failed",
+        });
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      this._eventSources.delete(ep.url);
+      this._downloads = new Map(this._downloads).set(ep.url, {
+        received: 0, total: 0, error: "Connection lost",
+      });
+    };
+  }
+
+  private async _unsaveEpisode(ep: PodcastEpisode, e: Event): Promise<void> {
+    e.stopPropagation();
+    const feedUrl = this._selected?.url ?? "";
+    await fetch("/api/podcasts/episodes/save", {
+      method: "DELETE",
+      headers: { "content-type": "application/json", ...getCsrfHeaders() },
+      body: JSON.stringify({ audio_url: ep.url, feed_url: feedUrl }),
+    });
+    const saved = new Map(this._saved);
+    saved.delete(ep.url);
+    this._saved = saved;
+    void this._fetchQuota();
   }
 
   // ---- playback ----
@@ -191,7 +350,9 @@ export class PodcastsPlayerElement extends LitElement {
     this._currentIndex = index;
     this._audioError   = "";
     const ep           = this._playlist[index];
-    this._audio.src    = ep.url;
+    // Use the local URL if the episode has been saved offline.
+    const localUrl     = this._saved.get(ep.url);
+    this._audio.src    = localUrl ?? ep.url;
     this._audio.volume = this._volume;
     void this._audio.play();
   }
@@ -204,7 +365,6 @@ export class PodcastsPlayerElement extends LitElement {
   private async _playNext(): Promise<void> { this._playAt(this._currentIndex + 1); }
 
   private _playPrev(): void {
-    // Restart if past 3 s into the episode; otherwise go back.
     if (this._audio.currentTime > 3) {
       this._audio.currentTime = 0;
     } else {
@@ -234,20 +394,100 @@ export class PodcastsPlayerElement extends LitElement {
     return this._currentIndex >= 0 ? (this._playlist[this._currentIndex] ?? null) : null;
   }
 
+  // ---- episode row ----
+
+  private _renderEpisode(ep: PodcastEpisode, episodes: PodcastEpisode[], currentGuid: string) {
+    const isSaved    = this._saved.has(ep.url);
+    const dl         = this._downloads.get(ep.url);
+    const isDownloading = dl !== undefined && !dl.error;
+
+    // Save/unsave action button.
+    let saveBtn: TemplateResult | typeof nothing = nothing;
+    if (dl?.error) {
+      saveBtn = html`
+        <button class="ep-save-btn error" title=${dl.error}
+                @click=${(e: Event) => void this._saveEpisode(ep, e)}>
+          ${t("podcasts.save-error")} ↺
+        </button>`;
+    } else if (isDownloading) {
+      saveBtn = html`<span class="ep-save-btn">${t("podcasts.saving")}</span>`;
+    } else if (isSaved) {
+      saveBtn = html`
+        <button class="ep-save-btn saved" title=${t("podcasts.unsave")}
+                @click=${(e: Event) => void this._unsaveEpisode(ep, e)}>
+          ✓ ${t("podcasts.saved")}
+        </button>`;
+    } else {
+      saveBtn = html`
+        <button class="ep-save-btn" title=${t("podcasts.save")}
+                @click=${(e: Event) => void this._saveEpisode(ep, e)}>
+          ↓ ${t("podcasts.save")}
+        </button>`;
+    }
+
+    // Download progress bar (shown below the row while downloading).
+    let progressBar: TemplateResult | typeof nothing = nothing;
+    if (isDownloading && dl) {
+      const pct  = dl.total > 0 ? Math.round((dl.received / dl.total) * 100) : 0;
+      const label = dl.total > 0
+        ? `${_fmtBytes(dl.received)} / ${_fmtBytes(dl.total)} (${pct}%)`
+        : _fmtBytes(dl.received);
+      const indeterminate = dl.total === 0;
+      progressBar = html`
+        <div class="dl-progress">
+          <div class="dl-bar-wrap">
+            <div class="dl-bar ${indeterminate ? "indeterminate" : ""}"
+                 style="width: ${indeterminate ? "40" : pct}%"></div>
+          </div>
+          <span>${label}</span>
+        </div>`;
+    }
+
+    return html`
+      <div class="ep-row ${ep.guid === currentGuid && this._playing ? "playing" : ""}">
+        <div class="ep-play" @click=${() => this._playEpisode(ep, episodes)}>
+          <span class="ep-title">${ep.title}${isSaved ? html` <span class="ep-offline-badge">⊙</span>` : nothing}</span>
+          <span class="ep-date">${ep.pub_date}</span>
+          <span class="ep-dur">${this._fmt(ep.duration)}</span>
+        </div>
+        <div class="ep-actions">${saveBtn}</div>
+      </div>
+      ${progressBar}
+    `;
+  }
+
+  // ---- quota pill ----
+
+  private _renderQuota() {
+    if (!this._quota) return nothing;
+    const { used_bytes, limit_bytes } = this._quota;
+    if (limit_bytes === 0) return nothing;  // unlimited
+    const pct = Math.min(100, Math.round((used_bytes / limit_bytes) * 100));
+    const cls = pct >= 90 ? "danger" : pct >= 70 ? "warning" : "";
+    return html`
+      <div class="quota-pill" title="${t("quota.label")}">
+        <div class="quota-bar">
+          <div class="quota-fill ${cls}" style="width: ${pct}%"></div>
+        </div>
+        <span>${_fmtBytes(used_bytes)} ${t("quota.of")} ${_fmtBytes(limit_bytes)}</span>
+      </div>`;
+  }
+
   // ---- rendering ----
 
   override render() {
-    const episodes = this._selected?.episodes ?? [];
-    const currentGuid = this._currentEp?.guid ?? "";
+    const episodes    = this._selected?.episodes ?? [];
+    const currentGuid = this._currentEp?.guid    ?? "";
 
     return html`
       <h3>${t("service.podcasts")}</h3>
 
-      <!-- toolbar -->
+      <!-- toolbar + quota -->
       <div class="toolbar">
         <button @click=${() => { this._showAddForm = !this._showAddForm; this._addError = ""; }}>
           ${t("podcasts.add")}
         </button>
+        ${this._renderQuota()}
       </div>
 
       <!-- add feed form -->
@@ -294,8 +534,7 @@ export class PodcastsPlayerElement extends LitElement {
               </div>
             `)}
           </div>
-        `
-      }
+        `}
 
       <!-- episode list -->
       ${this._loadingFeed ? html`<p class="empty">${t("podcasts.loading")}</p>` : nothing}
@@ -304,17 +543,9 @@ export class PodcastsPlayerElement extends LitElement {
           ? html`<p class="empty">${t("podcasts.no-episodes")}</p>`
           : html`
             <div class="episode-list">
-              ${episodes.map((ep) => html`
-                <div class="ep-row ${ep.guid === currentGuid && this._playing ? "playing" : ""}"
-                     @click=${() => this._playEpisode(ep, episodes)}>
-                  <span class="ep-title">${ep.title}</span>
-                  <span class="ep-date">${ep.pub_date}</span>
-                  <span class="ep-dur">${this._fmt(ep.duration)}</span>
-                </div>
-              `)}
+              ${episodes.map((ep) => this._renderEpisode(ep, episodes, currentGuid))}
             </div>
-          `
-        }
+          `}
       ` : nothing}
 
       <!-- audio error -->

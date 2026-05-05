@@ -196,6 +196,24 @@ def make_spotify_router(
             return JSONResponse({"error": str(exc)}, status_code=503)
         return JSONResponse({"ok": True})
 
+    # ---- librespot restart ----
+
+    async def restart_librespot(_request: Request) -> JSONResponse:
+        """Restart librespot using the current access token (no OAuth needed).
+
+        Intended for recovery when the backend was restarted or librespot
+        crashed but valid tokens are still stored.
+        """
+        if not api.authed:
+            return JSONResponse({"error": "not authenticated"}, status_code=401)
+        try:
+            token = await api._token()  # refresh if needed
+            await librespot.stop()
+            await librespot.start(token)
+        except Exception as exc:
+            return JSONResponse({"error": str(exc)}, status_code=503)
+        return JSONResponse({"ok": True, "running": librespot.running})
+
     # ---- disconnect ----
 
     async def disconnect(_request: Request) -> JSONResponse:
@@ -208,11 +226,12 @@ def make_spotify_router(
         return JSONResponse({"ok": True, "authed": False})
 
     return [
-        Route("/api/spotify/auth/start",    auth_start),
-        Route("/api/spotify/auth/callback", auth_callback),
-        Route("/api/spotify/status",        status),
-        Route("/api/spotify/devices",       devices_list),
-        Route("/api/spotify/library",       library),
-        Route("/api/spotify/command",       command,    methods=["POST"]),
-        Route("/api/spotify/disconnect",    disconnect, methods=["POST"]),
+        Route("/api/spotify/auth/start",          auth_start),
+        Route("/api/spotify/auth/callback",        auth_callback),
+        Route("/api/spotify/status",               status),
+        Route("/api/spotify/devices",              devices_list),
+        Route("/api/spotify/library",              library),
+        Route("/api/spotify/command",              command,            methods=["POST"]),
+        Route("/api/spotify/librespot/restart",    restart_librespot,  methods=["POST"]),
+        Route("/api/spotify/disconnect",           disconnect,         methods=["POST"]),
     ]

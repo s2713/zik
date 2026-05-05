@@ -67,6 +67,9 @@ export ZIK_REMOVABLE_ROOT="${ZIK_REMOVABLE_ROOT:-}"
 # Example: ZIK_SPOTIFY_CLIENT_ID=abc123 ./targets/demo/run.sh
 export ZIK_SPOTIFY_CLIENT_ID="${ZIK_SPOTIFY_CLIENT_ID:-}"
 
+# Directory for offline-saved podcast episodes (scoped to demo namespace).
+export ZIK_OFFLINE_DIR="${ZIK_OFFLINE_DIR:-$XDG_DATA_HOME/offline}"
+
 # Unix socket shared between backend (P1) and per-user helper (P2).
 export ZIK_HELPER_SOCKET="$XDG_RUNTIME_DIR/zik.sock"
 

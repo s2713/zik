@@ -210,6 +210,17 @@ export class SpotifyPlayerElement extends LitElement {
     } catch { /* backend unavailable */ }
   }
 
+  /** Restart librespot using stored tokens (no OAuth needed). */
+  private async _restartLibrespot(): Promise<void> {
+    try {
+      await fetch("/api/spotify/librespot/restart", {
+        method: "POST",
+        headers: { ...getCsrfHeaders() },
+      });
+      // Status poll picks up the new running state within 2 s.
+    } catch { /* backend unavailable */ }
+  }
+
   /** Transfer playback to the librespot device (by matching its name). */
   private async _useLocalDevice(): Promise<void> {
     // Refresh device list first to get the current librespot device ID.
@@ -309,7 +320,11 @@ export class SpotifyPlayerElement extends LitElement {
           ${this._librespotAvailable ? html`
             ${this._librespotRunning
               ? html`<span class="badge on">${t("spotify.playing-on")} ${this._librespotDevice}</span>`
-              : html`<span class="badge off">${t("spotify.librespot-stopped")}</span>`}
+              : html`
+                <span class="badge off">${t("spotify.librespot-stopped")}</span>
+                <button @click=${() => void this._restartLibrespot()}>
+                  ${t("spotify.restart-librespot")}
+                </button>`}
           ` : nothing}
           ${this._deviceName ? html`
             <span>${t("spotify.active-device")}: <em>${this._deviceName}</em></span>
