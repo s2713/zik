@@ -269,5 +269,25 @@
   "admin.terminal.meta":              { "en": "Session closes automatically after 60 seconds of inactivity or 10 minutes total.", "fr": "La session se ferme automatiquement après 60 secondes d'inactivité ou 10 minutes au total." },
   "admin.terminal.open":              { "en": "Open terminal",                        "fr": "Ouvrir le terminal" },
   "admin.terminal.close":             { "en": "Close terminal",                       "fr": "Fermer le terminal" },
-  "admin.terminal.closed":            { "en": "Terminal session ended.",              "fr": "Session de terminal terminée." }
+  "admin.terminal.closed":            { "en": "Terminal session ended.",              "fr": "Session de terminal terminée." },
+
+  "admin.backup.title":               { "en": "Config backup",                        "fr": "Sauvegarde de configuration" },
+  "admin.backup.note":                { "en": "Backs up users, services, network and device settings. Encrypted with AES-256-GCM. Re-authentication required.", "fr": "Sauvegarde les utilisateurs, services, réseau et paramètres de l'appareil. Chiffré avec AES-256-GCM. Ré-authentification requise." },
+  "admin.backup.export-title":        { "en": "Export",                               "fr": "Exporter" },
+  "admin.backup.import-title":        { "en": "Import",                               "fr": "Importer" },
+  "admin.backup.passphrase-placeholder":{ "en": "Passphrase (min 8 chars)",           "fr": "Phrase secrète (min 8 caractères)" },
+  "admin.backup.export-btn":          { "en": "Download backup",                      "fr": "Télécharger la sauvegarde" },
+  "admin.backup.import-btn":          { "en": "Restore backup",                       "fr": "Restaurer la sauvegarde" },
+  "admin.backup.strength-weak":       { "en": "Weak",                                 "fr": "Faible" },
+  "admin.backup.strength-fair":       { "en": "Fair",                                 "fr": "Passable" },
+  "admin.backup.strength-good":       { "en": "Good",                                 "fr": "Bonne" },
+  "admin.backup.strength-strong":     { "en": "Strong",                               "fr": "Forte" },
+  "admin.backup.exported":            { "en": "Backup downloaded.",                   "fr": "Sauvegarde téléchargée." },
+  "admin.backup.imported":            { "en": "Backup restored. Config reloaded.",    "fr": "Sauvegarde restaurée. Configuration rechargée." },
+  "admin.backup.err-short":           { "en": "Passphrase must be at least 8 characters.", "fr": "La phrase secrète doit comporter au moins 8 caractères." },
+  "admin.backup.err-export":          { "en": "Export failed.",                       "fr": "Échec de l'export." },
+  "admin.backup.err-no-file":         { "en": "Please select a backup file.",         "fr": "Veuillez sélectionner un fichier de sauvegarde." },
+  "admin.backup.err-parse":           { "en": "Invalid backup file.",                 "fr": "Fichier de sauvegarde invalide." },
+  "admin.backup.err-decrypt":         { "en": "Wrong passphrase or corrupted file.",  "fr": "Phrase secrète incorrecte ou fichier corrompu." },
+  "admin.backup.err-restore":         { "en": "Restore failed.",                      "fr": "Échec de la restauration." }
 }

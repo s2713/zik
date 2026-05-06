@@ -14,6 +14,7 @@ from starlette.websockets import WebSocket
 
 from .admin import UserRecord, make_admin_router, make_user_store
 from .admin_audit import AuditLog, make_admin_audit_router, make_audit_store
+from .admin_backup import make_admin_backup_router
 from .admin_device import DeviceConfig, make_admin_device_router, make_device_store
 from .admin_lock import DeviceLock, make_admin_lock_router, make_lock_store
 from .admin_network import make_admin_network_router, make_network_store
@@ -292,6 +293,11 @@ def make_app(
             *make_admin_lock_router(_sessions, _demo_device_lock, _demo_audit),
             *make_admin_audit_router(_sessions, _demo_audit),
             *make_admin_terminal_router(_sessions),
+            *make_admin_backup_router(
+                _sessions, _demo_users, _demo_services,
+                _demo_network_policy, _demo_networks,
+                _demo_device_config, _demo_device_lock,
+            ),
             *make_user_router(),
         ],
         lifespan=_lifespan,

@@ -466,6 +466,40 @@ export class AdminApp extends PlayerBase {
       border-radius: 5px;
       overflow: hidden;
     }
+
+    /* ---- backup section ---- */
+    .backup-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 0.5rem;
+    }
+    @media (max-width: 600px) { .backup-grid { grid-template-columns: 1fr; } }
+    .backup-card {
+      border: 1px solid #ddd; border-radius: 6px;
+      padding: 0.75rem 1rem; background: #fafafa;
+      display: flex; flex-direction: column; gap: 0.5rem;
+    }
+    .backup-card h4 { margin: 0; font-size: 0.9rem; color: #444; }
+    .backup-card input[type="password"] {
+      padding: 0.3rem 0.5rem; border: 1px solid #bbb;
+      border-radius: 4px; font-size: 0.9rem; width: 100%; box-sizing: border-box;
+    }
+    .entropy-bar {
+      height: 5px; border-radius: 3px; background: #eee;
+      overflow: hidden; margin-top: -0.2rem;
+    }
+    .entropy-fill { height: 100%; transition: width 0.2s, background 0.2s; border-radius: 3px; }
+    .entropy-weak   { background: #e53e3e; }
+    .entropy-fair   { background: #ed8936; }
+    .entropy-good   { background: #ecc94b; }
+    .entropy-strong { background: #48bb78; }
+    .entropy-label  { font-size: 0.75rem; color: #888; }
+    .backup-note  { font-size: 0.78rem; color: #888; }
+    .backup-msg   { font-size: 0.82rem; color: #1a7f37; min-height: 1em; }
+    .backup-err   { font-size: 0.82rem; color: #c00;    min-height: 1em; }
+    .file-input-wrap { position: relative; }
+    .file-input-wrap input[type="file"] { font-size: 0.82rem; }
   `];
 
   // ---- tab ----
@@ -479,6 +513,13 @@ export class AdminApp extends PlayerBase {
   @state() private _lockMode:       "indefinite" | "duration" | "until" = "indefinite";
   @state() private _lockMinutes     = "60";
   @state() private _lockUntil       = "";
+
+  // ---- backup section state (in device tab) ----
+  @state() private _exportPw   = "";
+  @state() private _importPw   = "";
+  @state() private _backupMsg  = "";
+  @state() private _backupErr  = "";
+  private _importFile: File | undefined = undefined;
 
   // ---- audit tab state ----
   @state() private _auditEntries:  AuditEntry[] = [];
@@ -810,6 +851,95 @@ export class AdminApp extends PlayerBase {
       ? user.services.filter((s) => s !== id)
       : [...user.services, id];
     void this._patchUser(user.username, { services: next });
+  }
+
+  // ---- backup helpers ----
+
+  /** Estimate passphrase strength as bits of entropy (charset × length). */
+  private _entropy(pw: string): number {
+    let pool = 0;
+    if (/[a-z]/.test(pw)) pool += 26;
+    if (/[A-Z]/.test(pw)) pool += 26;
+    if (/[0-9]/.test(pw)) pool += 10;
+    if (/[^a-zA-Z0-9]/.test(pw)) pool += 32;
+    return pw.length > 0 && pool > 0 ? Math.floor(pw.length * Math.log2(pool)) : 0;
+  }
+
+  private _entropyLevel(bits: number): "weak" | "fair" | "good" | "strong" {
+    if (bits >= 80) return "strong";
+    if (bits >= 60) return "good";
+    if (bits >= 40) return "fair";
+    return "weak";
+  }
+
+  private _renderEntropyBar(pw: string) {
+    const bits  = this._entropy(pw);
+    const level = this._entropyLevel(bits);
+    const pct   = Math.min(100, Math.round(bits / 100 * 100));
+    return html`
+      <div class="entropy-bar">
+        <div class="entropy-fill entropy-${level}" style="width:${pct}%"></div>
+      </div>
+      ${pw.length > 0 ? html`<span class="entropy-label">${t(`admin.backup.strength-${level}`)} (${bits} bits)</span>` : nothing}
+    `;
+  }
+
+  private async _exportBackup(): Promise<void> {
+    this._backupErr = "";
+    this._backupMsg = "";
+    const r = await fetch("/api/admin/backup/export", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...getCsrfHeaders() },
+      body: JSON.stringify({ passphrase: this._exportPw }),
+    });
+    if (!r.ok) {
+      const d = await r.json() as { error?: string };
+      this._backupErr = t(d.error === "passphrase-too-short"
+        ? "admin.backup.err-short" : "admin.backup.err-export");
+      return;
+    }
+    // Trigger a browser download from the response blob.
+    const blob = await r.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = "zik-backup.json";
+    a.click();
+    URL.revokeObjectURL(url);
+    this._backupMsg  = t("admin.backup.exported");
+    this._exportPw   = "";
+  }
+
+  private async _importBackup(): Promise<void> {
+    this._backupErr = "";
+    this._backupMsg = "";
+    if (!this._importFile) { this._backupErr = t("admin.backup.err-no-file"); return; }
+    let blob: unknown;
+    try {
+      blob = JSON.parse(await this._importFile.text());
+    } catch {
+      this._backupErr = t("admin.backup.err-parse"); return;
+    }
+    const r = await fetch("/api/admin/backup/import", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...getCsrfHeaders() },
+      body: JSON.stringify({ passphrase: this._importPw, data: blob }),
+    });
+    const d = await r.json() as { ok?: boolean; error?: string };
+    if (!r.ok) {
+      this._backupErr = t(d.error === "decrypt-failed"
+        ? "admin.backup.err-decrypt" : "admin.backup.err-restore");
+      return;
+    }
+    this._backupMsg  = t("admin.backup.imported");
+    this._importPw   = "";
+    this._importFile = undefined;
+    // Reload all admin state from backend now that stores are restored.
+    void this._fetchUsers();
+    void this._fetchServices();
+    void this._fetchNetwork();
+    void this._fetchDeviceConfig();
+    void this._fetchLockState();
   }
 
   // ---- terminal methods ----
@@ -1323,6 +1453,48 @@ export class AdminApp extends PlayerBase {
             ${t("admin.device.unlock-btn")}
           </button>
         `}
+      </div>
+
+      <!-- config backup / restore -->
+      <div class="dev-section">
+        <h3>${t("admin.backup.title")}</h3>
+        <p class="backup-note">${t("admin.backup.note")}</p>
+
+        <div class="backup-grid">
+          <!-- export card -->
+          <div class="backup-card">
+            <h4>${t("admin.backup.export-title")}</h4>
+            <input type="password" placeholder=${t("admin.backup.passphrase-placeholder")}
+                   .value=${live(this._exportPw)}
+                   @input=${(e: Event) => { this._exportPw = (e.target as HTMLInputElement).value; }} />
+            ${this._renderEntropyBar(this._exportPw)}
+            <button class="set-btn"
+                    @click=${() => this.requireReauth(() => void this._exportBackup())}>
+              ${t("admin.backup.export-btn")}
+            </button>
+          </div>
+
+          <!-- import card -->
+          <div class="backup-card">
+            <h4>${t("admin.backup.import-title")}</h4>
+            <div class="file-input-wrap">
+              <input type="file" accept=".json"
+                     @change=${(e: Event) => {
+                       this._importFile = (e.target as HTMLInputElement).files?.[0];
+                     }} />
+            </div>
+            <input type="password" placeholder=${t("admin.backup.passphrase-placeholder")}
+                   .value=${live(this._importPw)}
+                   @input=${(e: Event) => { this._importPw = (e.target as HTMLInputElement).value; }} />
+            <button class="set-btn"
+                    @click=${() => this.requireReauth(() => void this._importBackup())}>
+              ${t("admin.backup.import-btn")}
+            </button>
+          </div>
+        </div>
+
+        ${this._backupErr ? html`<div class="backup-err">${this._backupErr}</div>` : nothing}
+        ${this._backupMsg ? html`<div class="backup-msg">${this._backupMsg}</div>` : nothing}
       </div>
 
       <!-- hardware actions (stubs) -->
