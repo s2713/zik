@@ -13,6 +13,7 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket
 
 from .admin import UserRecord, make_admin_router, make_user_store
+from .admin_network import make_admin_network_router, make_network_store
 from .admin_services import ServiceRecord, make_admin_services_router, make_service_store
 from .helper_client import HelperClient
 from .middleware import CsrfDoubleSubmitMiddleware, OriginCheckMiddleware
@@ -54,6 +55,8 @@ _sessions: dict[str, dict] = {}
 _demo_users: dict[str, UserRecord] = make_user_store(["alice", "bob", "charlie"])
 # In-memory service store — global enable flags + shared credentials.
 _demo_services: dict[str, ServiceRecord] = make_service_store()
+# In-memory network store — global Wi-Fi policy + system network list.
+_demo_network_policy, _demo_networks = make_network_store()
 
 
 async def health(_request: Request) -> JSONResponse:
@@ -274,6 +277,7 @@ def make_app(
             *make_session_router(_sessions, _demo_users),
             *make_admin_router(_sessions, _demo_users),
             *make_admin_services_router(_sessions, _demo_services),
+            *make_admin_network_router(_sessions, _demo_network_policy, _demo_networks),
             *make_user_router(),
         ],
         lifespan=_lifespan,

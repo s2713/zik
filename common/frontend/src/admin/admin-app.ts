@@ -11,6 +11,17 @@ type AdminTab = "users" | "services" | "network" | "device";
 
 const REAUTH_TTL_MS = 60_000;
 
+interface NetworkPolicy {
+  wifi_connect_allowed: boolean;
+  wifi_add_allowed:     boolean;
+}
+
+interface WifiNetwork {
+  ssid:        string;
+  security:    string;
+  system_wide: boolean;
+}
+
 interface ServiceInfo {
   id:             string;
   global_enabled: boolean;
@@ -25,6 +36,7 @@ interface UserInfo {
   services:  string[];
   bluetooth: boolean;
   wifi:      boolean;
+  wifi_add:  boolean;
 }
 
 /**
@@ -286,6 +298,49 @@ export class AdminApp extends PlayerBase {
     .matrix .no   { color: #bbb; }
     .matrix .glob-off { color: #999; font-style: italic; }
 
+    /* ---- network tab ---- */
+    .policy-grid {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 0.5rem 1rem;
+      max-width: 480px;
+      margin-bottom: 1.5rem;
+    }
+    .policy-label { font-size: 0.92rem; }
+    .policy-note  { font-size: 0.78rem; color: #888; grid-column: 1; margin-top: -0.4rem; }
+
+    .net-list  { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.75rem; }
+    .net-row   {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.4rem 0.75rem;
+      border: 1px solid #ddd; border-radius: 5px; background: #fafafa;
+    }
+    .net-ssid  { font-weight: 600; flex: 1; }
+    .net-sec   { font-size: 0.8rem; color: #666; }
+    .net-scope { font-size: 0.78rem; color: #888; }
+    .net-del   {
+      padding: 0.18rem 0.5rem;
+      border: 1px solid #c00; border-radius: 4px;
+      background: transparent; color: #c00;
+      cursor: pointer; font-size: 0.78rem;
+    }
+    .net-del:hover { background: #c00; color: #fff; }
+
+    .add-net-form {
+      display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end;
+      padding: 0.65rem 0.75rem;
+      border: 1px dashed #aaa; border-radius: 5px; background: #fafafa;
+      margin-bottom: 0.5rem;
+    }
+    .add-net-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.82rem; color: #555; }
+    .add-net-form input, .add-net-form select {
+      padding: 0.3rem 0.5rem;
+      border: 1px solid #bbb; border-radius: 4px; font-size: 0.88rem;
+    }
+    .add-net-form input { width: 180px; }
+    .add-net-form .err  { flex-basis: 100%; color: #c00; font-size: 0.82rem; min-height: 1em; }
+
     /* ---- re-auth modal ---- */
     .modal-backdrop {
       position: fixed;
@@ -334,6 +389,15 @@ export class AdminApp extends PlayerBase {
   // ---- tab ----
   @state() private _tab: AdminTab = "users";
 
+  // ---- network tab state ----
+  @state() private _netPolicy:  NetworkPolicy | null = null;
+  @state() private _netList:    WifiNetwork[]        = [];
+  @state() private _netShowAdd  = false;
+  @state() private _netSsid     = "";
+  @state() private _netSecurity = "WPA2";
+  @state() private _netScope    = true;
+  @state() private _netAddErr   = "";
+
   // ---- services tab state ----
   @state() private _services:    ServiceInfo[] = [];
   @state() private _credOpen:    Set<string>   = new Set();
@@ -368,6 +432,7 @@ export class AdminApp extends PlayerBase {
     super.connectedCallback();
     void this._fetchUsers();
     void this._fetchServices();
+    void this._fetchNetwork();
   }
 
   // ---- re-auth API (called by action handlers) ----
@@ -400,6 +465,58 @@ export class AdminApp extends PlayerBase {
   private _cancelReauth(): void {
     this._reauthVisible = false;
     this._reauthPending = null;
+  }
+
+  // ---- network data helpers ----
+
+  private async _fetchNetwork(): Promise<void> {
+    try {
+      const r = await fetch("/api/admin/network");
+      if (r.ok) {
+        const d = await r.json() as { policy: NetworkPolicy; networks: WifiNetwork[] };
+        this._netPolicy = d.policy;
+        this._netList   = d.networks;
+      }
+    } catch { /* ignore */ }
+  }
+
+  private async _patchNetPolicy(patch: Partial<NetworkPolicy>): Promise<void> {
+    const r = await fetch("/api/admin/network/policy", {
+      method: "PATCH",
+      headers: { "content-type": "application/json", ...getCsrfHeaders() },
+      body: JSON.stringify(patch),
+    });
+    if (r.ok) {
+      const d = await r.json() as { policy: NetworkPolicy };
+      this._netPolicy = d.policy;
+    }
+  }
+
+  private async _addNetwork(): Promise<void> {
+    this._netAddErr = "";
+    const r = await fetch("/api/admin/network/wifi", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...getCsrfHeaders() },
+      body: JSON.stringify({
+        ssid: this._netSsid, security: this._netSecurity, system_wide: this._netScope,
+      }),
+    });
+    const d = await r.json() as { ok?: boolean; error?: string; network?: WifiNetwork };
+    if (!r.ok) {
+      this._netAddErr = t(d.error === "already-exists"
+        ? "admin.network.err-exists" : "admin.network.err-invalid-ssid");
+      return;
+    }
+    if (d.network) this._netList = [...this._netList, d.network];
+    this._netSsid = ""; this._netShowAdd = false;
+  }
+
+  private async _deleteNetwork(ssid: string): Promise<void> {
+    const r = await fetch(`/api/admin/network/wifi/${encodeURIComponent(ssid)}`, {
+      method: "DELETE",
+      headers: { ...getCsrfHeaders() },
+    });
+    if (r.ok) this._netList = this._netList.filter((n) => n.ssid !== ssid);
   }
 
   // ---- services data helpers ----
@@ -618,6 +735,11 @@ export class AdminApp extends PlayerBase {
                       @click=${() => void this._patchUser(user.username, { wifi: !user.wifi })}>
                 ${user.wifi ? "✓" : "✗"}
               </button>
+              <span class="field-label" style="margin-left:1rem">${t("admin.users.wifi-add")}</span>
+              <button class="toggle-btn ${user.wifi_add ? "on" : "off"}"
+                      @click=${() => void this._patchUser(user.username, { wifi_add: !user.wifi_add })}>
+                ${user.wifi_add ? "✓" : "✗"}
+              </button>
             </div>
 
             <!-- per-user status / error line -->
@@ -765,7 +887,116 @@ export class AdminApp extends PlayerBase {
       ` : nothing}
     `;
   }
-  private _renderNetwork()  { return html`<p class="stub">${t("admin.stub")}</p>`; }
+  private _renderNetwork() {
+    const p = this._netPolicy;
+    if (!p) return html`<p class="stub">${t("admin.stub")}</p>`;
+
+    return html`
+      <!-- global Wi-Fi policy -->
+      <h3 style="margin:0 0 0.75rem;font-size:0.95rem;color:#555">${t("admin.network.policy-title")}</h3>
+      <div class="policy-grid">
+        <span class="policy-label">${t("admin.network.wifi-connect")}</span>
+        <button class="toggle-btn ${p.wifi_connect_allowed ? "on" : "off"}"
+                @click=${() => void this._patchNetPolicy({ wifi_connect_allowed: !p.wifi_connect_allowed })}>
+          ${p.wifi_connect_allowed ? t("admin.services.enabled") : t("admin.services.disabled")}
+        </button>
+        <span class="policy-note">${t("admin.network.wifi-connect-note")}</span>
+
+        <span class="policy-label">${t("admin.network.wifi-add")}</span>
+        <button class="toggle-btn ${p.wifi_add_allowed ? "on" : "off"}"
+                @click=${() => void this._patchNetPolicy({ wifi_add_allowed: !p.wifi_add_allowed })}>
+          ${p.wifi_add_allowed ? t("admin.services.enabled") : t("admin.services.disabled")}
+        </button>
+        <span class="policy-note">${t("admin.network.wifi-add-note")}</span>
+      </div>
+
+      <!-- per-user effective Wi-Fi access matrix -->
+      ${this._users.length > 0 ? html`
+        <h3 style="margin:0 0 0.5rem;font-size:0.95rem;color:#555">${t("admin.network.user-access")}</h3>
+        <div class="matrix-wrap" style="margin-bottom:1.5rem">
+          <table class="matrix">
+            <thead>
+              <tr>
+                <th></th>
+                <th>${t("admin.network.col-connect")}</th>
+                <th>${t("admin.network.col-add")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${this._users.map((u) => {
+                const canConnect = p.wifi_connect_allowed && u.wifi;
+                const canAdd     = p.wifi_add_allowed     && u.wifi_add;
+                return html`
+                  <tr>
+                    <td class="user-col">${u.username}</td>
+                    <td class="${canConnect ? "ok" : "no"}">${canConnect ? "✓" : "✗"}</td>
+                    <td class="${canAdd     ? "ok" : "no"}">${canAdd     ? "✓" : "✗"}</td>
+                  </tr>`;
+              })}
+            </tbody>
+          </table>
+        </div>
+      ` : nothing}
+
+      <!-- system Wi-Fi network list -->
+      <h3 style="margin:0 0 0.5rem;font-size:0.95rem;color:#555">${t("admin.network.networks-title")}</h3>
+      <div class="net-list">
+        ${this._netList.length === 0
+          ? html`<p class="stub">${t("admin.network.no-networks")}</p>`
+          : this._netList.map((net) => html`
+              <div class="net-row">
+                <span class="net-ssid">${net.ssid}</span>
+                <span class="net-sec">${net.security}</span>
+                <span class="net-scope">
+                  ${net.system_wide ? t("admin.network.scope-system") : t("admin.network.scope-admin")}
+                </span>
+                <button class="net-del"
+                        @click=${() => void this._deleteNetwork(net.ssid)}>✕</button>
+              </div>`)}
+      </div>
+
+      <!-- add network form -->
+      ${this._netShowAdd ? html`
+        <div class="add-net-form">
+          <label>
+            ${t("admin.network.ssid")}
+            <input type="text" .value=${live(this._netSsid)}
+                   @input=${(e: Event) => { this._netSsid = (e.target as HTMLInputElement).value; }}
+                   @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") void this._addNetwork(); }} />
+          </label>
+          <label>
+            ${t("admin.network.security")}
+            <select .value=${live(this._netSecurity)}
+                    @change=${(e: Event) => { this._netSecurity = (e.target as HTMLSelectElement).value; }}>
+              <option>WPA2</option>
+              <option>WPA3</option>
+              <option>WPA2/WPA3</option>
+              <option>Open</option>
+            </select>
+          </label>
+          <label>
+            ${t("admin.network.scope")}
+            <select @change=${(e: Event) => { this._netScope = (e.target as HTMLSelectElement).value === "system"; }}>
+              <option value="system" ?selected=${this._netScope}>${t("admin.network.scope-system")}</option>
+              <option value="admin"  ?selected=${!this._netScope}>${t("admin.network.scope-admin")}</option>
+            </select>
+          </label>
+          <button class="add-btn primary" @click=${() => void this._addNetwork()}>
+            ${t("admin.users.create")}
+          </button>
+          <button class="add-btn secondary"
+                  @click=${() => { this._netShowAdd = false; this._netAddErr = ""; }}>
+            ${t("admin.reauth.cancel")}
+          </button>
+          ${this._netAddErr ? html`<span class="err">${this._netAddErr}</span>` : nothing}
+        </div>
+      ` : html`
+        <button class="add-open-btn" @click=${() => { this._netShowAdd = true; }}>
+          + ${t("admin.network.add-network")}
+        </button>
+      `}
+    `;
+  }
   private _renderDevice()   { return html`<p class="stub">${t("admin.stub")}</p>`; }
 
   override render() {

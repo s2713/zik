@@ -25,7 +25,8 @@ class UserRecord:
     quota_mb:  int       = 1024
     services:  list[str] = field(default_factory=lambda: list(_ALL_SERVICES))
     bluetooth: bool      = True
-    wifi:      bool      = True
+    wifi:      bool      = True   # can connect to Wi-Fi
+    wifi_add:  bool      = False  # can add new Wi-Fi networks
 
 
 def make_user_store(usernames: list[str]) -> dict[str, UserRecord]:
@@ -106,6 +107,8 @@ def make_admin_router(sessions: dict, users: dict[str, UserRecord]) -> list:
             rec.bluetooth = bool(body["bluetooth"])
         if "wifi"      in body:
             rec.wifi      = bool(body["wifi"])
+        if "wifi_add"  in body:
+            rec.wifi_add  = bool(body["wifi_add"])
         if "services"  in body:
             rec.services = [s for s in body["services"] if s in _ALL_SERVICES]
         return JSONResponse({"ok": True, "user": _to_dict(username, rec)})
