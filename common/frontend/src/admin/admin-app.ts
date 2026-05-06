@@ -29,6 +29,12 @@ interface ServiceInfo {
   cred_fields:    string[];
 }
 
+interface LockState {
+  locked:       boolean;
+  locked_until: number | null;
+  active:       boolean;
+}
+
 interface UserInfo {
   username:  string;
   disabled:  boolean;
@@ -366,6 +372,22 @@ export class AdminApp extends PlayerBase {
     }
     .dev-action-note { font-size: 0.78rem; color: #aaa; font-style: italic; }
     .dev-msg { font-size: 0.82rem; color: #1a7f37; min-height: 1em; }
+    .lock-status {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.3rem 0.75rem;
+      border-radius: 4px; font-size: 0.88rem;
+      margin-bottom: 0.75rem;
+    }
+    .lock-status.active   { background: #fff3cd; border: 1px solid #9a6700; color: #7a5300; }
+    .lock-status.inactive { background: #dafbe1; border: 1px solid #1a7f37; color: #1a5229; }
+    .lock-mode-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+    .lock-mode-row label  { font-size: 0.88rem; display: flex; align-items: center; gap: 0.3rem; cursor: pointer; }
+    .lock-mode-row input[type="number"],
+    .lock-mode-row input[type="datetime-local"] {
+      padding: 0.28rem 0.5rem; border: 1px solid #bbb; border-radius: 4px; font-size: 0.88rem;
+    }
+    .lock-mode-row input[type="number"]        { width: 70px; }
+    .lock-mode-row input[type="datetime-local"] { width: 210px; }
 
     /* ---- re-auth modal ---- */
     .modal-backdrop {
@@ -419,6 +441,10 @@ export class AdminApp extends PlayerBase {
   @state() private _devConfig:      { default_quota_mb: number } | null = null;
   @state() private _devQuotaDraft   = "";
   @state() private _devMsg          = "";
+  @state() private _lockState:      LockState | null = null;
+  @state() private _lockMode:       "indefinite" | "duration" | "until" = "indefinite";
+  @state() private _lockMinutes     = "60";
+  @state() private _lockUntil       = "";
 
   // ---- network tab state ----
   @state() private _netPolicy:  NetworkPolicy | null = null;
@@ -465,6 +491,7 @@ export class AdminApp extends PlayerBase {
     void this._fetchServices();
     void this._fetchNetwork();
     void this._fetchDeviceConfig();
+    void this._fetchLockState();
   }
 
   // ---- re-auth API (called by action handlers) ----
@@ -509,6 +536,39 @@ export class AdminApp extends PlayerBase {
         this._devQuotaDraft  = String(this._devConfig.default_quota_mb);
       }
     } catch { /* ignore */ }
+  }
+
+  private async _fetchLockState(): Promise<void> {
+    try {
+      const r = await fetch("/api/admin/lock");
+      if (r.ok) this._lockState = await r.json() as LockState;
+    } catch { /* ignore */ }
+  }
+
+  private async _setLock(): Promise<void> {
+    const body: Record<string, unknown> = { mode: this._lockMode };
+    if (this._lockMode === "duration") body["minutes"] = parseInt(this._lockMinutes, 10) || 60;
+    if (this._lockMode === "until")    body["until"]   = new Date(this._lockUntil).getTime() / 1000;
+    const r = await fetch("/api/admin/lock", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...getCsrfHeaders() },
+      body: JSON.stringify(body),
+    });
+    if (r.ok) {
+      const d = await r.json() as { lock: LockState };
+      this._lockState = d.lock;
+    }
+  }
+
+  private async _clearLock(): Promise<void> {
+    const r = await fetch("/api/admin/lock", {
+      method: "DELETE",
+      headers: { ...getCsrfHeaders() },
+    });
+    if (r.ok) {
+      const d = await r.json() as { lock: LockState };
+      this._lockState = d.lock;
+    }
   }
 
   private async _saveDefaultQuota(): Promise<void> {
@@ -1085,6 +1145,63 @@ export class AdminApp extends PlayerBase {
           </button>
         </div>
         <div class="dev-msg">${this._devMsg}</div>
+      </div>
+
+      <!-- device lock -->
+      <div class="dev-section">
+        <h3>${t("admin.device.lock-title")}</h3>
+
+        <!-- current status badge -->
+        <div class="lock-status ${this._lockState?.active ? "active" : "inactive"}">
+          ${this._lockState?.active ? t("admin.device.lock-active") : t("admin.device.lock-inactive")}
+          ${(this._lockState?.active && this._lockState.locked_until != null) ? html`
+            &nbsp;— ${t("admin.device.lock-until")}
+            ${new Date(this._lockState.locked_until * 1000).toLocaleString()}
+          ` : nothing}
+        </div>
+
+        <!-- mode selector + lock button (shown when unlocked) -->
+        ${!this._lockState?.active ? html`
+          <div class="lock-mode-row">
+            <label>
+              <input type="radio" name="lock-mode" value="indefinite"
+                     ?checked=${this._lockMode === "indefinite"}
+                     @change=${() => { this._lockMode = "indefinite"; }} />
+              ${t("admin.device.lock-mode-indefinite")}
+            </label>
+            <label>
+              <input type="radio" name="lock-mode" value="duration"
+                     ?checked=${this._lockMode === "duration"}
+                     @change=${() => { this._lockMode = "duration"; }} />
+              ${t("admin.device.lock-mode-duration")}
+            </label>
+            ${this._lockMode === "duration" ? html`
+              <input type="number" min="1"
+                     .value=${live(this._lockMinutes)}
+                     @input=${(e: Event) => { this._lockMinutes = (e.target as HTMLInputElement).value; }} />
+              ${t("admin.device.lock-minutes")}
+            ` : nothing}
+            <label>
+              <input type="radio" name="lock-mode" value="until"
+                     ?checked=${this._lockMode === "until"}
+                     @change=${() => { this._lockMode = "until"; }} />
+              ${t("admin.device.lock-mode-until")}
+            </label>
+            ${this._lockMode === "until" ? html`
+              <input type="datetime-local"
+                     .value=${live(this._lockUntil)}
+                     @input=${(e: Event) => { this._lockUntil = (e.target as HTMLInputElement).value; }} />
+            ` : nothing}
+          </div>
+          <button class="set-btn" @click=${() => void this._setLock()}>
+            ${t("admin.device.lock-btn")}
+          </button>
+        ` : html`
+          <button class="set-btn" style="background:#c00;border-color:#c00"
+                  @click=${() => void this._clearLock()}>
+            ${t("admin.device.unlock-btn")}
+          </button>
+        `}
       </div>
 
       <!-- hardware actions (stubs) -->

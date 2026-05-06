@@ -124,9 +124,10 @@ export class ScreenLockElement extends PlayerBase {
   @state() private _lockState: LockState = "idle";
   @state() private _clock = "";
   @state() private _users: string[] = [];
-  @state() private _adminMode  = false;   // password form visible
-  @state() private _adminPw    = "";
-  @state() private _adminError = "";
+  @state() private _adminMode    = false;   // password form visible
+  @state() private _adminPw      = "";
+  @state() private _adminError   = "";
+  @state() private _deviceLocked = false;   // admin device-lock active
 
   private _idleTimer:     ReturnType<typeof setTimeout>  | null = null;
   private _lockTimer:     ReturnType<typeof setTimeout>  | null = null;
@@ -160,7 +161,25 @@ export class ScreenLockElement extends PlayerBase {
     document.addEventListener("touchstart", this._onActivity,    { passive: true });
     document.addEventListener("keydown",    this._onKeydown);
     window.addEventListener(LOCK_REQUEST_EVENT, this._onLockRequest);
+    void this._checkDeviceLock();
     this._resetIdleTimer();
+  }
+
+  private async _checkDeviceLock(): Promise<void> {
+    try {
+      const r = await fetch("/api/lock/status");
+      if (r.ok) {
+        const d = await r.json() as { locked: boolean };
+        this._deviceLocked = d.locked;
+        // If the device is admin-locked, force the lock screen immediately.
+        if (this._deviceLocked && this._lockState === "idle") {
+          this._lockState = "locked";
+          this._updateClock();
+          this._clockInterval = setInterval(() => this._updateClock(), 1000);
+          void listUsers().then((u) => { this._users = u; });
+        }
+      }
+    } catch { /* non-fatal */ }
   }
 
   override disconnectedCallback(): void {
@@ -229,17 +248,27 @@ export class ScreenLockElement extends PlayerBase {
       this._adminError = t("admin.wrong-password");
       return;
     }
-    setCurrentUser("admin");   // fires USER_CHANGED_EVENT → main.ts reloads
+    this._deviceLocked = false;
+    setCurrentUser("admin");
+    this._lockState = "idle";
+    this._clearTimers();
+    this._resetIdleTimer();
+    this.dispatchEvent(new CustomEvent("zik-unlocked", { bubbles: true }));
   }
 
   private async _selectUser(name: string): Promise<void> {
     const prev = currentUser();
     try {
-      await fetch("/api/session/login", {
+      const r = await fetch("/api/session/login", {
         method: "POST",
         headers: { "content-type": "application/json", ...getCsrfHeaders() },
         body: JSON.stringify({ username: name }),
       });
+      // 403 with device-locked means admin re-locked while this screen was open.
+      if (!r.ok) {
+        const d = await r.json() as { error?: string };
+        if (d.error === "device-locked") { this._deviceLocked = true; return; }
+      }
     } catch { /* ignore; local state still updates */ }
     setCurrentUser(name);
     if (name !== prev) {
@@ -288,15 +317,23 @@ export class ScreenLockElement extends PlayerBase {
                    autofocus />
             <div class="err">${this._adminError}</div>
             <div class="row">
-              <button class="back-btn"
-                      @click=${() => { this._adminMode = false; this._adminPw = ""; this._adminError = ""; }}>
-                ← ${t("screen.pick-user")}
-              </button>
+              ${!this._deviceLocked ? html`
+                <button class="back-btn"
+                        @click=${() => { this._adminMode = false; this._adminPw = ""; this._adminError = ""; }}>
+                  ← ${t("screen.pick-user")}
+                </button>
+              ` : nothing}
               <button class="submit-btn" @click=${() => void this._submitAdmin()}>
                 ${t("admin.login")}
               </button>
             </div>
           </div>
+        ` : this._deviceLocked ? html`
+          <!-- Device-locked banner — only admin login available -->
+          <div class="pick-label">${t("screen.device-locked")}</div>
+          <button class="admin-btn" @click=${() => { this._adminMode = true; }}>
+            ${t("admin.login")}
+          </button>
         ` : html`
           <!-- Regular user picker + admin entry -->
           <div class="pick-label">${t("screen.pick-user")}</div>

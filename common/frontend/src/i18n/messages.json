@@ -129,6 +129,7 @@
 
   "screen.locking":            { "en": "Locking & turning off screen",  "fr": "Verrouillage & extinction de l'écran" },
   "screen.pick-user":          { "en": "Who are you?",                 "fr": "Qui êtes-vous ?" },
+  "screen.device-locked":      { "en": "Device locked by administrator.", "fr": "Appareil verrouillé par l'administrateur." },
 
   "session.logged-in-as":      { "en": "▸ {user}",                    "fr": "▸ {user}" },
   "session.lock":              { "en": "Lock",                         "fr": "Verrouiller" },
@@ -232,5 +233,16 @@
   "admin.device.action-format-drive":{ "en": "Format removable drive",             "fr": "Formater le support amovible" },
   "admin.device.action-update-app": { "en": "Update app",                          "fr": "Mettre à jour l'application" },
   "admin.device.action-fsck":       { "en": "Check filesystem (fsck)",             "fr": "Vérifier le système de fichiers (fsck)" },
-  "admin.device.action-reinstall":  { "en": "Reinstall app",                       "fr": "Réinstaller l'application" }
+  "admin.device.action-reinstall":  { "en": "Reinstall app",                       "fr": "Réinstaller l'application" },
+
+  "admin.device.lock-title":          { "en": "Device lock",                         "fr": "Verrouillage de l'appareil" },
+  "admin.device.lock-inactive":       { "en": "Unlocked — users can log in normally.", "fr": "Déverrouillé — les utilisateurs peuvent se connecter normalement." },
+  "admin.device.lock-active":         { "en": "Locked — only admin can log in.",      "fr": "Verrouillé — seul l'administrateur peut se connecter." },
+  "admin.device.lock-until":          { "en": "until",                                "fr": "jusqu'au" },
+  "admin.device.lock-mode-indefinite":{ "en": "Indefinitely",                         "fr": "Indéfiniment" },
+  "admin.device.lock-mode-duration":  { "en": "For",                                  "fr": "Pendant" },
+  "admin.device.lock-minutes":        { "en": "minutes",                              "fr": "minutes" },
+  "admin.device.lock-mode-until":     { "en": "Until date/time",                      "fr": "Jusqu'à une date/heure" },
+  "admin.device.lock-btn":            { "en": "Lock device",                          "fr": "Verrouiller l'appareil" },
+  "admin.device.unlock-btn":          { "en": "Unlock device",                        "fr": "Déverrouiller l'appareil" }
 }

@@ -14,6 +14,7 @@ from starlette.websockets import WebSocket
 
 from .admin import UserRecord, make_admin_router, make_user_store
 from .admin_device import DeviceConfig, make_admin_device_router, make_device_store
+from .admin_lock import DeviceLock, make_admin_lock_router, make_lock_store
 from .admin_network import make_admin_network_router, make_network_store
 from .admin_services import ServiceRecord, make_admin_services_router, make_service_store
 from .helper_client import HelperClient
@@ -60,6 +61,8 @@ _demo_services: dict[str, ServiceRecord] = make_service_store()
 _demo_network_policy, _demo_networks = make_network_store()
 # In-memory device config — default quota and hardware action stubs.
 _demo_device_config: DeviceConfig = make_device_store()
+# In-memory device lock — admin-controlled login restriction.
+_demo_device_lock: DeviceLock = make_lock_store()
 
 
 async def health(_request: Request) -> JSONResponse:
@@ -277,11 +280,12 @@ def make_app(
             *make_quota_router(library_db, _offline_dir),
             *make_radio_router(library_db),
             *make_power_router(),
-            *make_session_router(_sessions, _demo_users),
+            *make_session_router(_sessions, _demo_users, _demo_device_lock),
             *make_admin_router(_sessions, _demo_users, _demo_device_config),
             *make_admin_services_router(_sessions, _demo_services),
             *make_admin_network_router(_sessions, _demo_network_policy, _demo_networks),
             *make_admin_device_router(_sessions, _demo_device_config),
+            *make_admin_lock_router(_sessions, _demo_device_lock),
             *make_user_router(),
         ],
         lifespan=_lifespan,

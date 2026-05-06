@@ -10,6 +10,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from .admin_lock import DeviceLock, is_locked
+
 _DEMO_USERS = ["alice", "bob", "charlie"]
 # Hardcoded for demo only — real PAM auth on Target 2.
 _ADMIN_PASSWORD = "admin"
@@ -17,7 +19,8 @@ _ADMIN_PASSWORD = "admin"
 _REAUTH_TTL = 60
 
 
-def make_session_router(sessions: dict, users: dict | None = None) -> list:
+def make_session_router(sessions: dict, users: dict | None = None,
+                        device_lock: DeviceLock | None = None) -> list:
     """Return Starlette Route list for session endpoints, sharing the app sessions dict.
 
     Pass the admin user store as `users` so /api/users stays in sync with
@@ -58,6 +61,9 @@ def make_session_router(sessions: dict, users: dict | None = None) -> list:
             sessions[sid]["is_admin"] = True
             sessions[sid].pop("locked", None)
             return JSONResponse({"ok": True, "user": "admin", "is_admin": True})
+        # Device lock — only admin may log in while active.
+        if device_lock is not None and is_locked(device_lock):
+            return JSONResponse({"ok": False, "error": "device-locked"}, status_code=403)
         valid = set(users.keys()) if users is not None else set(_DEMO_USERS)
         if username not in valid:
             return JSONResponse({"ok": False, "error": "unknown user"}, status_code=400)
