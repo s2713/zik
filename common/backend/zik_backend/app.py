@@ -18,6 +18,7 @@ from .admin_device import DeviceConfig, make_admin_device_router, make_device_st
 from .admin_lock import DeviceLock, make_admin_lock_router, make_lock_store
 from .admin_network import make_admin_network_router, make_network_store
 from .admin_services import ServiceRecord, make_admin_services_router, make_service_store
+from .admin_terminal import make_admin_terminal_router
 from .helper_client import HelperClient
 from .middleware import CsrfDoubleSubmitMiddleware, OriginCheckMiddleware
 from .player import PlayerManager, state_as_dict
@@ -290,6 +291,7 @@ def make_app(
             *make_admin_device_router(_sessions, _demo_device_config),
             *make_admin_lock_router(_sessions, _demo_device_lock, _demo_audit),
             *make_admin_audit_router(_sessions, _demo_audit),
+            *make_admin_terminal_router(_sessions),
             *make_user_router(),
         ],
         lifespan=_lifespan,

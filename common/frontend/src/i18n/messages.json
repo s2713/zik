@@ -262,5 +262,12 @@
   "admin.audit.action.user-disable":  { "en": "User disabled",                        "fr": "Utilisateur désactivé" },
   "admin.audit.action.user-enable":   { "en": "User enabled",                         "fr": "Utilisateur réactivé" },
   "admin.audit.action.service-enable":{ "en": "Service enabled",                      "fr": "Service activé" },
-  "admin.audit.action.service-disable":{ "en": "Service disabled",                    "fr": "Service désactivé" }
+  "admin.audit.action.service-disable":{ "en": "Service disabled",                    "fr": "Service désactivé" },
+
+  "admin.tab.terminal":               { "en": "Terminal",                             "fr": "Terminal" },
+  "admin.terminal.info":              { "en": "Opens a shell running as the current system user (demo). Re-authentication is required.", "fr": "Ouvre un shell sous l'utilisateur système courant (démo). Une ré-authentification est requise." },
+  "admin.terminal.meta":              { "en": "Session closes automatically after 60 seconds of inactivity or 10 minutes total.", "fr": "La session se ferme automatiquement après 60 secondes d'inactivité ou 10 minutes au total." },
+  "admin.terminal.open":              { "en": "Open terminal",                        "fr": "Ouvrir le terminal" },
+  "admin.terminal.close":             { "en": "Close terminal",                       "fr": "Fermer le terminal" },
+  "admin.terminal.closed":            { "en": "Terminal session ended.",              "fr": "Session de terminal terminée." }
 }

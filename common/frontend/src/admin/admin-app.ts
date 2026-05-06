@@ -1,5 +1,8 @@
-import { css, html, nothing } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { FitAddon } from "@xterm/addon-fit";
+import { Terminal } from "@xterm/xterm";
+import xtermCss from "@xterm/xterm/css/xterm.css?inline";
+import { css, html, nothing, unsafeCSS } from "lit";
+import { customElement, query, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../csrf.js";
@@ -7,7 +10,7 @@ import { t } from "../i18n/i18n.js";
 import { PlayerBase } from "../player-base.js";
 import { SERVICES } from "../services-list.js";
 
-type AdminTab = "users" | "services" | "network" | "device" | "audit";
+type AdminTab = "users" | "services" | "network" | "device" | "audit" | "terminal";
 
 const REAUTH_TTL_MS = 60_000;
 
@@ -59,7 +62,7 @@ interface UserInfo {
  */
 @customElement("admin-app")
 export class AdminApp extends PlayerBase {
-  static override styles = css`
+  static override styles = [unsafeCSS(xtermCss), css`
     :host {
       display: block;
       font-family: sans-serif;
@@ -453,7 +456,17 @@ export class AdminApp extends PlayerBase {
       border: 1px solid #bbb; border-radius: 5px;
       background: #fff; cursor: pointer; font-size: 0.95rem;
     }
-  `;
+
+    /* ---- terminal tab ---- */
+    .term-info { font-size: 0.88rem; color: #555; margin-bottom: 1rem; }
+    .term-meta  { font-size: 0.78rem; color: #888; margin-bottom: 0.75rem; }
+    #terminal-container {
+      height: 420px;
+      background: #000;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+  `];
 
   // ---- tab ----
   @state() private _tab: AdminTab = "users";
@@ -470,6 +483,15 @@ export class AdminApp extends PlayerBase {
   // ---- audit tab state ----
   @state() private _auditEntries:  AuditEntry[] = [];
   @state() private _auditLoading  = false;
+
+  // ---- terminal tab state ----
+  @state() private _termActive = false;
+  @state() private _termMsg    = "";
+  @query("#terminal-container")
+  private _termContainer!: HTMLElement;
+  private _xterm:        Terminal | undefined       = undefined;
+  private _termWs:       WebSocket | undefined      = undefined;
+  private _termFitAddon: FitAddon | undefined       = undefined;
 
   // ---- network tab state ----
   @state() private _netPolicy:  NetworkPolicy | null = null;
@@ -788,6 +810,67 @@ export class AdminApp extends PlayerBase {
       ? user.services.filter((s) => s !== id)
       : [...user.services, id];
     void this._patchUser(user.username, { services: next });
+  }
+
+  // ---- terminal methods ----
+
+  private async _openTerminal(): Promise<void> {
+    this._termMsg    = "";
+    this._termActive = true;
+    await this.updateComplete;   // wait for #terminal-container to enter the DOM
+
+    const container = this._termContainer;
+    if (!container) { this._termActive = false; return; }
+
+    this._xterm = new Terminal({
+      cursorBlink: true,
+      fontSize: 14,
+      fontFamily: "monospace",
+      theme: { background: "#000000" },
+    });
+    this._termFitAddon = new FitAddon();
+    this._xterm.loadAddon(this._termFitAddon);
+    this._xterm.open(container);
+    this._termFitAddon.fit();
+
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    this._termWs = new WebSocket(`${proto}//${window.location.host}/api/ws/admin/terminal`);
+    this._termWs.binaryType = "arraybuffer";
+
+    this._termWs.onopen = () => { this._termFitAddon?.fit(); };
+
+    this._termWs.onmessage = (e: MessageEvent) => {
+      if (e.data instanceof ArrayBuffer) {
+        this._xterm?.write(new Uint8Array(e.data));
+      }
+    };
+
+    this._termWs.onclose = () => { this._closeTerminal(); };
+
+    this._xterm.onData((data: string) => {
+      if (this._termWs?.readyState === WebSocket.OPEN) {
+        this._termWs.send(new TextEncoder().encode(data));
+      }
+    });
+
+    this._xterm.onResize(({ cols, rows }: { cols: number; rows: number }) => {
+      if (this._termWs?.readyState === WebSocket.OPEN) {
+        this._termWs.send(JSON.stringify({ type: "resize", cols, rows }));
+      }
+    });
+
+    // Keep terminal sized to its container.
+    new ResizeObserver(() => this._termFitAddon?.fit()).observe(container);
+  }
+
+  private _closeTerminal(): void {
+    this._termWs?.close();
+    this._termWs      = undefined;
+    this._xterm?.dispose();
+    this._xterm       = undefined;
+    this._termFitAddon = undefined;
+    this._termActive   = false;
+    this._termMsg      = t("admin.terminal.closed");
   }
 
   // ---- rendering ----
@@ -1294,10 +1377,32 @@ export class AdminApp extends PlayerBase {
     `;
   }
 
+  private _renderTerminal() {
+    return html`
+      <p class="term-info">${t("admin.terminal.info")}</p>
+      <p class="term-meta">${t("admin.terminal.meta")}</p>
+
+      ${this._termMsg ? html`<p class="stub">${this._termMsg}</p>` : nothing}
+
+      ${!this._termActive ? html`
+        <button class="set-btn"
+                @click=${() => this.requireReauth(() => void this._openTerminal())}>
+          ${t("admin.terminal.open")}
+        </button>
+      ` : html`
+        <button class="add-btn secondary" style="margin-bottom:0.5rem"
+                @click=${() => this._closeTerminal()}>
+          ${t("admin.terminal.close")}
+        </button>
+        <div id="terminal-container"></div>
+      `}
+    `;
+  }
+
   override render() {
     return html`
       <nav class="tabs">
-        ${(["users", "services", "network", "device", "audit"] as AdminTab[]).map((tab) => html`
+        ${(["users", "services", "network", "device", "audit", "terminal"] as AdminTab[]).map((tab) => html`
           <button class="tab-btn ${this._tab === tab ? "active" : ""}"
                   @click=${() => {
                     this._tab = tab;
@@ -1313,6 +1418,7 @@ export class AdminApp extends PlayerBase {
       ${this._tab === "network"  ? this._renderNetwork()  : nothing}
       ${this._tab === "device"   ? this._renderDevice()   : nothing}
       ${this._tab === "audit"    ? this._renderAudit()    : nothing}
+      ${this._tab === "terminal" ? this._renderTerminal() : nothing}
 
       <!-- re-auth modal -->
       ${this._reauthVisible ? html`
