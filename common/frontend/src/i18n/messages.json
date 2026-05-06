@@ -218,5 +218,19 @@
   "admin.network.security":         { "en": "Security",                            "fr": "Sécurité" },
   "admin.network.scope":            { "en": "Scope",                               "fr": "Portée" },
   "admin.network.err-exists":       { "en": "Network already exists.",             "fr": "Ce réseau existe déjà." },
-  "admin.network.err-invalid-ssid": { "en": "Invalid SSID.",                       "fr": "SSID invalide." }
+  "admin.network.err-invalid-ssid": { "en": "Invalid SSID.",                       "fr": "SSID invalide." },
+
+  "admin.device.info-title":        { "en": "Device information",                  "fr": "Informations sur l'appareil" },
+  "admin.device.target":            { "en": "Target",                              "fr": "Cible" },
+  "admin.device.target-demo":       { "en": "Target 1 — development demo",         "fr": "Cible 1 — démo de développement" },
+  "admin.device.note":              { "en": "Note",                                "fr": "Remarque" },
+  "admin.device.note-text":         { "en": "Hardware actions are available on Target 2 (production).", "fr": "Les actions matérielles sont disponibles sur la cible 2 (production)." },
+  "admin.device.default-quota-title":{ "en": "New user default quota",             "fr": "Quota par défaut des nouveaux utilisateurs" },
+  "admin.device.saved":             { "en": "Saved.",                              "fr": "Enregistré." },
+  "admin.device.actions-title":     { "en": "Device actions",                      "fr": "Actions sur l'appareil" },
+  "admin.device.not-in-demo":       { "en": "Not available in demo.",              "fr": "Non disponible en mode démo." },
+  "admin.device.action-format-drive":{ "en": "Format removable drive",             "fr": "Formater le support amovible" },
+  "admin.device.action-update-app": { "en": "Update app",                          "fr": "Mettre à jour l'application" },
+  "admin.device.action-fsck":       { "en": "Check filesystem (fsck)",             "fr": "Vérifier le système de fichiers (fsck)" },
+  "admin.device.action-reinstall":  { "en": "Reinstall app",                       "fr": "Réinstaller l'application" }
 }

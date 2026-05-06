@@ -341,6 +341,32 @@ export class AdminApp extends PlayerBase {
     .add-net-form input { width: 180px; }
     .add-net-form .err  { flex-basis: 100%; color: #c00; font-size: 0.82rem; min-height: 1em; }
 
+    /* ---- device tab ---- */
+    .dev-section { margin-bottom: 1.5rem; }
+    .dev-section h3 { margin: 0 0 0.6rem; font-size: 0.95rem; color: #555; }
+    .dev-info {
+      font-size: 0.88rem; color: #555;
+      border: 1px solid #ddd; border-radius: 5px;
+      padding: 0.6rem 0.9rem; background: #fafafa;
+      margin-bottom: 0.5rem;
+    }
+    .dev-info dt { font-weight: 600; display: inline; }
+    .dev-info dd { display: inline; margin: 0 0 0 0.25rem; }
+    .dev-info p  { margin: 0.15rem 0; }
+    .dev-actions { display: flex; flex-direction: column; gap: 0.4rem; max-width: 320px; }
+    .dev-action-row {
+      display: flex; align-items: center; gap: 0.75rem;
+    }
+    .dev-action-btn {
+      padding: 0.32rem 0.9rem;
+      border: 1px solid #bbb; border-radius: 4px;
+      background: #fff; cursor: not-allowed;
+      font-size: 0.88rem; color: #aaa;
+      min-width: 160px; text-align: left;
+    }
+    .dev-action-note { font-size: 0.78rem; color: #aaa; font-style: italic; }
+    .dev-msg { font-size: 0.82rem; color: #1a7f37; min-height: 1em; }
+
     /* ---- re-auth modal ---- */
     .modal-backdrop {
       position: fixed;
@@ -389,6 +415,11 @@ export class AdminApp extends PlayerBase {
   // ---- tab ----
   @state() private _tab: AdminTab = "users";
 
+  // ---- device tab state ----
+  @state() private _devConfig:      { default_quota_mb: number } | null = null;
+  @state() private _devQuotaDraft   = "";
+  @state() private _devMsg          = "";
+
   // ---- network tab state ----
   @state() private _netPolicy:  NetworkPolicy | null = null;
   @state() private _netList:    WifiNetwork[]        = [];
@@ -433,6 +464,7 @@ export class AdminApp extends PlayerBase {
     void this._fetchUsers();
     void this._fetchServices();
     void this._fetchNetwork();
+    void this._fetchDeviceConfig();
   }
 
   // ---- re-auth API (called by action handlers) ----
@@ -465,6 +497,34 @@ export class AdminApp extends PlayerBase {
   private _cancelReauth(): void {
     this._reauthVisible = false;
     this._reauthPending = null;
+  }
+
+  // ---- device data helpers ----
+
+  private async _fetchDeviceConfig(): Promise<void> {
+    try {
+      const r = await fetch("/api/admin/device");
+      if (r.ok) {
+        this._devConfig      = await r.json() as { default_quota_mb: number };
+        this._devQuotaDraft  = String(this._devConfig.default_quota_mb);
+      }
+    } catch { /* ignore */ }
+  }
+
+  private async _saveDefaultQuota(): Promise<void> {
+    const mb = parseInt(this._devQuotaDraft, 10);
+    if (isNaN(mb) || mb < 0) return;
+    const r = await fetch("/api/admin/device", {
+      method: "PATCH",
+      headers: { "content-type": "application/json", ...getCsrfHeaders() },
+      body: JSON.stringify({ default_quota_mb: mb }),
+    });
+    if (r.ok) {
+      const d = await r.json() as { config: { default_quota_mb: number } };
+      this._devConfig = d.config;
+      this._devMsg    = t("admin.device.saved");
+      setTimeout(() => { this._devMsg = ""; }, 3000);
+    }
   }
 
   // ---- network data helpers ----
@@ -997,7 +1057,51 @@ export class AdminApp extends PlayerBase {
       `}
     `;
   }
-  private _renderDevice()   { return html`<p class="stub">${t("admin.stub")}</p>`; }
+  private _renderDevice() {
+    return html`
+      <!-- device info -->
+      <div class="dev-section">
+        <h3>${t("admin.device.info-title")}</h3>
+        <div class="dev-info">
+          <p><dt>${t("admin.device.target")}</dt>
+             <dd>${t("admin.device.target-demo")}</dd></p>
+          <p><dt>${t("admin.device.note")}</dt>
+             <dd>${t("admin.device.note-text")}</dd></p>
+        </div>
+      </div>
+
+      <!-- default quota -->
+      <div class="dev-section">
+        <h3>${t("admin.device.default-quota-title")}</h3>
+        <div class="field-row">
+          <span class="field-label">${t("admin.users.quota")}</span>
+          <input type="number" min="0" step="128"
+                 .value=${live(this._devQuotaDraft)}
+                 @input=${(e: Event) => {
+                   this._devQuotaDraft = (e.target as HTMLInputElement).value;
+                 }} />
+          <button class="set-btn" @click=${() => void this._saveDefaultQuota()}>
+            ${t("admin.users.set")}
+          </button>
+        </div>
+        <div class="dev-msg">${this._devMsg}</div>
+      </div>
+
+      <!-- hardware actions (stubs) -->
+      <div class="dev-section">
+        <h3>${t("admin.device.actions-title")}</h3>
+        <div class="dev-actions">
+          ${(["format-drive", "update-app", "fsck", "reinstall"] as const).map((action) => html`
+            <div class="dev-action-row">
+              <button class="dev-action-btn" disabled>
+                ${t(`admin.device.action-${action}`)}
+              </button>
+              <span class="dev-action-note">${t("admin.device.not-in-demo")}</span>
+            </div>`)}
+        </div>
+      </div>
+    `;
+  }
 
   override render() {
     return html`

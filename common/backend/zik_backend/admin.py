@@ -34,7 +34,8 @@ def make_user_store(usernames: list[str]) -> dict[str, UserRecord]:
     return {u: UserRecord(password=u) for u in usernames}
 
 
-def make_admin_router(sessions: dict, users: dict[str, UserRecord]) -> list:
+def make_admin_router(sessions: dict, users: dict[str, UserRecord],
+                      device_config=None) -> list:
     """Return Starlette Route list for admin user-management endpoints."""
 
     def _require_admin(request: Request) -> dict | None:
@@ -72,7 +73,8 @@ def make_admin_router(sessions: dict, users: dict[str, UserRecord]) -> list:
             return JSONResponse({"error": "invalid-username"}, status_code=400)
         if username in users or username == "admin":
             return JSONResponse({"error": "already-exists"}, status_code=409)
-        users[username] = UserRecord(password=password or username)
+        quota = device_config.default_quota_mb if device_config is not None else 1024
+        users[username] = UserRecord(password=password or username, quota_mb=quota)
         return JSONResponse({"ok": True, "user": _to_dict(username, users[username])})
 
     async def delete_user(request: Request) -> JSONResponse:
