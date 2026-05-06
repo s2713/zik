@@ -20,13 +20,18 @@ _ALL_SERVICES = ["demo", "files", "mpd", "subsonic", "spotify", "podcasts", "rad
 @dataclass
 class UserRecord:
     """In-memory representation of a managed user (demo only)."""
-    password:  str       = "changeme"
-    disabled:  bool      = False
-    quota_mb:  int       = 1024
-    services:  list[str] = field(default_factory=lambda: list(_ALL_SERVICES))
-    bluetooth: bool      = True
-    wifi:      bool      = True   # can connect to Wi-Fi
-    wifi_add:  bool      = False  # can add new Wi-Fi networks
+    password:        str       = "changeme"
+    disabled:        bool      = False
+    quota_mb:        int       = 1024
+    services:        list[str] = field(default_factory=lambda: list(_ALL_SERVICES))
+    bluetooth:       bool      = True
+    wifi:            bool      = True        # can connect to Wi-Fi
+    wifi_add:        bool      = False       # can add new Wi-Fi networks
+    # Parental controls
+    schedule_start:  int | None = None   # allowed-hours start (0–23), None = unrestricted
+    schedule_end:    int | None = None   # allowed-hours end   (0–23), None = unrestricted
+    daily_limit_min: int | None = None   # daily time cap in minutes, None = unlimited
+    explicit_filter: bool       = False  # block explicit-content tracks
 
 
 def make_user_store(usernames: list[str]) -> dict[str, UserRecord]:
@@ -122,6 +127,18 @@ def make_admin_router(sessions: dict, users: dict[str, UserRecord],
             rec.wifi_add  = bool(body["wifi_add"])
         if "services"  in body:
             rec.services = [s for s in body["services"] if s in _ALL_SERVICES]
+        # Parental controls
+        if "schedule_start" in body:
+            v = body["schedule_start"]
+            rec.schedule_start = int(v) % 24 if v is not None else None
+        if "schedule_end" in body:
+            v = body["schedule_end"]
+            rec.schedule_end = int(v) % 24 if v is not None else None
+        if "daily_limit_min" in body:
+            v = body["daily_limit_min"]
+            rec.daily_limit_min = max(1, int(v)) if v is not None else None
+        if "explicit_filter" in body:
+            rec.explicit_filter = bool(body["explicit_filter"])
         return JSONResponse({"ok": True, "user": _to_dict(username, rec)})
 
     return [

@@ -33,18 +33,27 @@ def make_session_router(sessions: dict, users: dict | None = None,
         return JSONResponse(list(users.keys()) if users is not None else _DEMO_USERS)
 
     async def get_session(request: Request) -> JSONResponse:
-        """Return the active user, admin flag, and allowed service list."""
+        """Return the active user, admin flag, allowed services, and parental settings."""
         sid = request.cookies.get("__Host-zik-session")
         session = sessions.get(sid, {}) if sid else {}
         user = session.get("user", None)
-        # Resolve per-user allowed services from the user store.
+        # Resolve per-user fields from the user store.
         allowed: list[str] | None = None
+        parental: dict | None     = None
         if user and user != "admin" and users is not None and user in users:
-            allowed = users[user].services
+            rec     = users[user]
+            allowed = rec.services
+            parental = {
+                "schedule_start":  rec.schedule_start,
+                "schedule_end":    rec.schedule_end,
+                "daily_limit_min": rec.daily_limit_min,
+                "explicit_filter": rec.explicit_filter,
+            }
         return JSONResponse({
             "user":             user,
             "is_admin":         session.get("is_admin", False),
             "allowed_services": allowed,
+            "parental":         parental,
         })
 
     async def login(request: Request) -> JSONResponse:

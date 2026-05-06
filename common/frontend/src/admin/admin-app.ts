@@ -46,13 +46,17 @@ interface LockState {
 }
 
 interface UserInfo {
-  username:  string;
-  disabled:  boolean;
-  quota_mb:  number;
-  services:  string[];
-  bluetooth: boolean;
-  wifi:      boolean;
-  wifi_add:  boolean;
+  username:        string;
+  disabled:        boolean;
+  quota_mb:        number;
+  services:        string[];
+  bluetooth:       boolean;
+  wifi:            boolean;
+  wifi_add:        boolean;
+  schedule_start:  number | null;
+  schedule_end:    number | null;
+  daily_limit_min: number | null;
+  explicit_filter: boolean;
 }
 
 /**
@@ -559,8 +563,11 @@ export class AdminApp extends PlayerBase {
   @state() private _addPassword = "";
   @state() private _addError    = "";
   // Per-user draft state for fields with an explicit Set button.
-  @state() private _pwDraft:    Record<string, string> = {};
-  @state() private _quotaDraft: Record<string, string> = {};
+  @state() private _pwDraft:       Record<string, string> = {};
+  @state() private _quotaDraft:    Record<string, string> = {};
+  @state() private _schedStartDraft: Record<string, string> = {};
+  @state() private _schedEndDraft:   Record<string, string> = {};
+  @state() private _limitDraft:    Record<string, string> = {};
   @state() private _userMsg:    Record<string, string> = {};
   @state() private _userErr:    Record<string, string> = {};
 
@@ -1006,9 +1013,15 @@ export class AdminApp extends PlayerBase {
   // ---- rendering ----
 
   private _renderUserRow(user: UserInfo) {
-    const open = this._expanded.has(user.username);
-    const pw   = this._pwDraft[user.username]    ?? "";
-    const quota = this._quotaDraft[user.username] ?? String(user.quota_mb);
+    const open  = this._expanded.has(user.username);
+    const pw    = this._pwDraft[user.username]       ?? "";
+    const quota = this._quotaDraft[user.username]    ?? String(user.quota_mb);
+    const schedStart = this._schedStartDraft[user.username]
+      ?? (user.schedule_start !== null ? String(user.schedule_start) : "");
+    const schedEnd   = this._schedEndDraft[user.username]
+      ?? (user.schedule_end   !== null ? String(user.schedule_end)   : "");
+    const limit = this._limitDraft[user.username]
+      ?? (user.daily_limit_min !== null ? String(user.daily_limit_min) : "");
 
     return html`
       <div class="user-row">
@@ -1110,6 +1123,75 @@ export class AdminApp extends PlayerBase {
               <button class="toggle-btn ${user.wifi_add ? "on" : "off"}"
                       @click=${() => void this._patchUser(user.username, { wifi_add: !user.wifi_add })}>
                 ${user.wifi_add ? "✓" : "✗"}
+              </button>
+            </div>
+
+            <!-- parental controls -->
+            <div class="field-row">
+              <span class="field-label">${t("admin.users.parental.explicit-filter")}</span>
+              <button class="toggle-btn ${user.explicit_filter ? "on" : "off"}"
+                      @click=${() => void this._patchUser(user.username, { explicit_filter: !user.explicit_filter })}>
+                ${user.explicit_filter ? "✓" : "✗"}
+              </button>
+            </div>
+            <div class="field-row">
+              <span class="field-label">${t("admin.users.parental.schedule")}</span>
+              <input type="number" min="0" max="23" style="width:3.5rem"
+                     .value=${live(schedStart)}
+                     placeholder="0"
+                     @input=${(e: Event) => {
+                       this._schedStartDraft = { ...this._schedStartDraft,
+                         [user.username]: (e.target as HTMLInputElement).value };
+                     }} />
+              <span style="margin:0 0.25rem">–</span>
+              <input type="number" min="0" max="23" style="width:3.5rem"
+                     .value=${live(schedEnd)}
+                     placeholder="23"
+                     @input=${(e: Event) => {
+                       this._schedEndDraft = { ...this._schedEndDraft,
+                         [user.username]: (e.target as HTMLInputElement).value };
+                     }} />
+              <button class="set-btn"
+                      @click=${() => {
+                        const s = parseInt(schedStart, 10);
+                        const e = parseInt(schedEnd,   10);
+                        if (!isNaN(s) && !isNaN(e))
+                          void this._patchUser(user.username, { schedule_start: s, schedule_end: e });
+                      }}>
+                ${t("admin.users.set")}
+              </button>
+              <button class="set-btn"
+                      @click=${() => {
+                        this._schedStartDraft = { ...this._schedStartDraft, [user.username]: "" };
+                        this._schedEndDraft   = { ...this._schedEndDraft,   [user.username]: "" };
+                        void this._patchUser(user.username, { schedule_start: null, schedule_end: null });
+                      }}>
+                ${t("admin.users.parental.clear")}
+              </button>
+            </div>
+            <div class="field-row">
+              <span class="field-label">${t("admin.users.parental.daily-limit")}</span>
+              <input type="number" min="1" style="width:5rem"
+                     .value=${live(limit)}
+                     placeholder="—"
+                     @input=${(e: Event) => {
+                       this._limitDraft = { ...this._limitDraft,
+                         [user.username]: (e.target as HTMLInputElement).value };
+                     }} />
+              <button class="set-btn"
+                      @click=${() => {
+                        const m = parseInt(limit, 10);
+                        if (!isNaN(m) && m > 0)
+                          void this._patchUser(user.username, { daily_limit_min: m });
+                      }}>
+                ${t("admin.users.set")}
+              </button>
+              <button class="set-btn"
+                      @click=${() => {
+                        this._limitDraft = { ...this._limitDraft, [user.username]: "" };
+                        void this._patchUser(user.username, { daily_limit_min: null });
+                      }}>
+                ${t("admin.users.parental.clear")}
               </button>
             </div>
 

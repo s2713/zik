@@ -186,6 +186,10 @@
   "admin.users.err-failed":      { "en": "Save failed.",                       "fr": "Échec de l'enregistrement." },
   "admin.users.err-exists":      { "en": "Username already exists.",           "fr": "Ce nom d'utilisateur existe déjà." },
   "admin.users.err-invalid":     { "en": "Invalid username.",                  "fr": "Nom d'utilisateur invalide." },
+  "admin.users.parental.explicit-filter": { "en": "Block explicit content",    "fr": "Filtrer le contenu explicite" },
+  "admin.users.parental.schedule":        { "en": "Allowed hours (start–end)", "fr": "Heures autorisées (début–fin)" },
+  "admin.users.parental.daily-limit":     { "en": "Daily limit (min)",         "fr": "Limite quotidienne (min)" },
+  "admin.users.parental.clear":           { "en": "Clear",                     "fr": "Effacer" },
 
   "admin.services.enabled":      { "en": "Enabled",                           "fr": "Activé" },
   "admin.services.disabled":     { "en": "Disabled",                          "fr": "Désactivé" },
