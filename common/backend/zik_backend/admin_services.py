@@ -46,6 +46,7 @@ def _to_dict(service_id: str, rec: ServiceRecord) -> dict:
 def make_admin_services_router(
     sessions: dict,
     services: dict[str, ServiceRecord],
+    audit=None,
 ) -> list:
     """Return Starlette Route list for admin service-management endpoints."""
 
@@ -73,7 +74,12 @@ def make_admin_services_router(
         body = await request.json()
         rec = services[service_id]
         if "global_enabled" in body:
-            rec.global_enabled = bool(body["global_enabled"])
+            new_enabled = bool(body["global_enabled"])
+            if audit is not None and rec.global_enabled != new_enabled:
+                audit.add("admin",
+                          "service-enable" if new_enabled else "service-disable",
+                          service_id)
+            rec.global_enabled = new_enabled
         if "credentials" in body and isinstance(body["credentials"], dict):
             # Only accept known credential fields for this service.
             allowed = _CRED_FIELDS.get(service_id, [])

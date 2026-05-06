@@ -20,7 +20,8 @@ _REAUTH_TTL = 60
 
 
 def make_session_router(sessions: dict, users: dict | None = None,
-                        device_lock: DeviceLock | None = None) -> list:
+                        device_lock: DeviceLock | None = None,
+                        audit=None) -> list:
     """Return Starlette Route list for session endpoints, sharing the app sessions dict.
 
     Pass the admin user store as `users` so /api/users stays in sync with
@@ -60,6 +61,8 @@ def make_session_router(sessions: dict, users: dict | None = None,
             sessions[sid]["user"]     = "admin"
             sessions[sid]["is_admin"] = True
             sessions[sid].pop("locked", None)
+            if audit is not None:
+                audit.add("admin", "login")
             return JSONResponse({"ok": True, "user": "admin", "is_admin": True})
         # Device lock — only admin may log in while active.
         if device_lock is not None and is_locked(device_lock):
@@ -70,6 +73,8 @@ def make_session_router(sessions: dict, users: dict | None = None,
         sessions[sid]["user"]     = username
         sessions[sid]["is_admin"] = False
         sessions[sid].pop("locked", None)
+        if audit is not None:
+            audit.add(username, "login")
         return JSONResponse({"ok": True, "user": username, "is_admin": False})
 
     async def reauth(request: Request) -> JSONResponse:

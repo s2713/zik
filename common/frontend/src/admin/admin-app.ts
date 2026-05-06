@@ -7,7 +7,7 @@ import { t } from "../i18n/i18n.js";
 import { PlayerBase } from "../player-base.js";
 import { SERVICES } from "../services-list.js";
 
-type AdminTab = "users" | "services" | "network" | "device";
+type AdminTab = "users" | "services" | "network" | "device" | "audit";
 
 const REAUTH_TTL_MS = 60_000;
 
@@ -27,6 +27,13 @@ interface ServiceInfo {
   global_enabled: boolean;
   credentials:    Record<string, string>;
   cred_fields:    string[];
+}
+
+interface AuditEntry {
+  timestamp: number;
+  actor:     string;
+  action:    string;
+  detail:    string;
 }
 
 interface LockState {
@@ -389,6 +396,20 @@ export class AdminApp extends PlayerBase {
     .lock-mode-row input[type="number"]        { width: 70px; }
     .lock-mode-row input[type="datetime-local"] { width: 210px; }
 
+    /* ---- audit tab ---- */
+    .audit-toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+    .audit-toolbar h3 { margin: 0; font-size: 0.95rem; color: #555; flex: 1; }
+    .audit-table {
+      width: 100%; border-collapse: collapse; font-size: 0.85rem;
+    }
+    .audit-table th, .audit-table td {
+      border: 1px solid #ddd; padding: 0.3rem 0.6rem;
+      text-align: left; white-space: nowrap;
+    }
+    .audit-table th { background: #f4f4f4; font-weight: 600; }
+    .audit-table td.detail-col { white-space: normal; color: #666; }
+    .audit-table tr:nth-child(even) { background: #fafafa; }
+
     /* ---- re-auth modal ---- */
     .modal-backdrop {
       position: fixed;
@@ -446,6 +467,10 @@ export class AdminApp extends PlayerBase {
   @state() private _lockMinutes     = "60";
   @state() private _lockUntil       = "";
 
+  // ---- audit tab state ----
+  @state() private _auditEntries:  AuditEntry[] = [];
+  @state() private _auditLoading  = false;
+
   // ---- network tab state ----
   @state() private _netPolicy:  NetworkPolicy | null = null;
   @state() private _netList:    WifiNetwork[]        = [];
@@ -492,6 +517,7 @@ export class AdminApp extends PlayerBase {
     void this._fetchNetwork();
     void this._fetchDeviceConfig();
     void this._fetchLockState();
+    void this._fetchAudit();
   }
 
   // ---- re-auth API (called by action handlers) ----
@@ -543,6 +569,18 @@ export class AdminApp extends PlayerBase {
       const r = await fetch("/api/admin/lock");
       if (r.ok) this._lockState = await r.json() as LockState;
     } catch { /* ignore */ }
+  }
+
+  private async _fetchAudit(): Promise<void> {
+    this._auditLoading = true;
+    try {
+      const r = await fetch("/api/admin/audit");
+      if (r.ok) {
+        const d = await r.json() as { entries: AuditEntry[] };
+        this._auditEntries = d.entries;
+      }
+    } catch { /* ignore */ }
+    this._auditLoading = false;
   }
 
   private async _setLock(): Promise<void> {
@@ -1220,12 +1258,51 @@ export class AdminApp extends PlayerBase {
     `;
   }
 
+  private _renderAudit() {
+    return html`
+      <div class="audit-toolbar">
+        <h3>${t("admin.audit.title")}</h3>
+        <button class="set-btn" @click=${() => void this._fetchAudit()}>
+          ${t("admin.audit.refresh")}
+        </button>
+      </div>
+
+      ${this._auditLoading ? html`<p class="stub">${t("admin.stub")}</p>` :
+        this._auditEntries.length === 0 ? html`<p class="stub">${t("admin.audit.empty")}</p>` :
+        html`
+          <div style="overflow-x:auto">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th>${t("admin.audit.col-time")}</th>
+                  <th>${t("admin.audit.col-actor")}</th>
+                  <th>${t("admin.audit.col-action")}</th>
+                  <th>${t("admin.audit.col-detail")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${this._auditEntries.map((e) => html`
+                  <tr>
+                    <td>${new Date(e.timestamp * 1000).toLocaleString()}</td>
+                    <td>${e.actor}</td>
+                    <td>${t(`admin.audit.action.${e.action}`, e.action)}</td>
+                    <td class="detail-col">${e.detail}</td>
+                  </tr>`)}
+              </tbody>
+            </table>
+          </div>`}
+    `;
+  }
+
   override render() {
     return html`
       <nav class="tabs">
-        ${(["users", "services", "network", "device"] as AdminTab[]).map((tab) => html`
+        ${(["users", "services", "network", "device", "audit"] as AdminTab[]).map((tab) => html`
           <button class="tab-btn ${this._tab === tab ? "active" : ""}"
-                  @click=${() => { this._tab = tab; }}>
+                  @click=${() => {
+                    this._tab = tab;
+                    if (tab === "audit") void this._fetchAudit();
+                  }}>
             ${t(`admin.tab.${tab}`)}
           </button>
         `)}
@@ -1235,6 +1312,7 @@ export class AdminApp extends PlayerBase {
       ${this._tab === "services" ? this._renderServices() : nothing}
       ${this._tab === "network"  ? this._renderNetwork()  : nothing}
       ${this._tab === "device"   ? this._renderDevice()   : nothing}
+      ${this._tab === "audit"    ? this._renderAudit()    : nothing}
 
       <!-- re-auth modal -->
       ${this._reauthVisible ? html`

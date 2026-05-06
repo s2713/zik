@@ -43,7 +43,7 @@ def _to_dict(lock: DeviceLock) -> dict:
     return d
 
 
-def make_admin_lock_router(sessions: dict, lock: DeviceLock) -> list:
+def make_admin_lock_router(sessions: dict, lock: DeviceLock, audit=None) -> list:
     """Return Starlette Route list for admin lock-management endpoints."""
 
     def _require_admin(request: Request) -> dict | None:
@@ -80,6 +80,8 @@ def make_admin_lock_router(sessions: dict, lock: DeviceLock) -> list:
             lock.locked_until = ts if ts > time.time() else None
         else:
             lock.locked_until = None  # indefinite
+        if audit is not None:
+            audit.add("admin", "device-lock", mode)
         return JSONResponse({"ok": True, "lock": _to_dict(lock)})
 
     async def clear_lock(request: Request) -> JSONResponse:
@@ -88,6 +90,8 @@ def make_admin_lock_router(sessions: dict, lock: DeviceLock) -> list:
             return JSONResponse({"error": "forbidden"}, status_code=403)
         lock.locked       = False
         lock.locked_until = None
+        if audit is not None:
+            audit.add("admin", "device-unlock")
         return JSONResponse({"ok": True, "lock": _to_dict(lock)})
 
     async def lock_status(request: Request) -> JSONResponse:

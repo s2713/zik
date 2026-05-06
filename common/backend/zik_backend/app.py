@@ -13,6 +13,7 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket
 
 from .admin import UserRecord, make_admin_router, make_user_store
+from .admin_audit import AuditLog, make_admin_audit_router, make_audit_store
 from .admin_device import DeviceConfig, make_admin_device_router, make_device_store
 from .admin_lock import DeviceLock, make_admin_lock_router, make_lock_store
 from .admin_network import make_admin_network_router, make_network_store
@@ -63,6 +64,8 @@ _demo_network_policy, _demo_networks = make_network_store()
 _demo_device_config: DeviceConfig = make_device_store()
 # In-memory device lock — admin-controlled login restriction.
 _demo_device_lock: DeviceLock = make_lock_store()
+# In-memory audit log — shared by all mutating routers.
+_demo_audit: AuditLog = make_audit_store()
 
 
 async def health(_request: Request) -> JSONResponse:
@@ -280,12 +283,13 @@ def make_app(
             *make_quota_router(library_db, _offline_dir),
             *make_radio_router(library_db),
             *make_power_router(),
-            *make_session_router(_sessions, _demo_users, _demo_device_lock),
-            *make_admin_router(_sessions, _demo_users, _demo_device_config),
-            *make_admin_services_router(_sessions, _demo_services),
+            *make_session_router(_sessions, _demo_users, _demo_device_lock, _demo_audit),
+            *make_admin_router(_sessions, _demo_users, _demo_device_config, _demo_audit),
+            *make_admin_services_router(_sessions, _demo_services, _demo_audit),
             *make_admin_network_router(_sessions, _demo_network_policy, _demo_networks),
             *make_admin_device_router(_sessions, _demo_device_config),
-            *make_admin_lock_router(_sessions, _demo_device_lock),
+            *make_admin_lock_router(_sessions, _demo_device_lock, _demo_audit),
+            *make_admin_audit_router(_sessions, _demo_audit),
             *make_user_router(),
         ],
         lifespan=_lifespan,

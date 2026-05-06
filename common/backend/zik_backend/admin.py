@@ -35,7 +35,7 @@ def make_user_store(usernames: list[str]) -> dict[str, UserRecord]:
 
 
 def make_admin_router(sessions: dict, users: dict[str, UserRecord],
-                      device_config=None) -> list:
+                      device_config=None, audit=None) -> list:
     """Return Starlette Route list for admin user-management endpoints."""
 
     def _require_admin(request: Request) -> dict | None:
@@ -75,6 +75,8 @@ def make_admin_router(sessions: dict, users: dict[str, UserRecord],
             return JSONResponse({"error": "already-exists"}, status_code=409)
         quota = device_config.default_quota_mb if device_config is not None else 1024
         users[username] = UserRecord(password=password or username, quota_mb=quota)
+        if audit is not None:
+            audit.add("admin", "user-create", username)
         return JSONResponse({"ok": True, "user": _to_dict(username, users[username])})
 
     async def delete_user(request: Request) -> JSONResponse:
@@ -88,6 +90,8 @@ def make_admin_router(sessions: dict, users: dict[str, UserRecord],
         if username not in users:
             return JSONResponse({"error": "not-found"}, status_code=404)
         del users[username]
+        if audit is not None:
+            audit.add("admin", "user-delete", username)
         return JSONResponse({"ok": True})
 
     async def patch_user(request: Request) -> JSONResponse:
@@ -99,8 +103,13 @@ def make_admin_router(sessions: dict, users: dict[str, UserRecord],
             return JSONResponse({"error": "not-found"}, status_code=404)
         body = await request.json()
         rec = users[username]
-        if "disabled"  in body:
-            rec.disabled  = bool(body["disabled"])
+        if "disabled" in body:
+            new_disabled = bool(body["disabled"])
+            if audit is not None and rec.disabled != new_disabled:
+                audit.add("admin",
+                          "user-disable" if new_disabled else "user-enable",
+                          username)
+            rec.disabled = new_disabled
         if "password"  in body:
             rec.password  = str(body["password"])
         if "quota_mb"  in body:

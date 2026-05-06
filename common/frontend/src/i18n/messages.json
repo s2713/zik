@@ -244,5 +244,23 @@
   "admin.device.lock-minutes":        { "en": "minutes",                              "fr": "minutes" },
   "admin.device.lock-mode-until":     { "en": "Until date/time",                      "fr": "Jusqu'à une date/heure" },
   "admin.device.lock-btn":            { "en": "Lock device",                          "fr": "Verrouiller l'appareil" },
-  "admin.device.unlock-btn":          { "en": "Unlock device",                        "fr": "Déverrouiller l'appareil" }
+  "admin.device.unlock-btn":          { "en": "Unlock device",                        "fr": "Déverrouiller l'appareil" },
+
+  "admin.tab.audit":                  { "en": "Audit log",                            "fr": "Journal d'audit" },
+  "admin.audit.title":                { "en": "Audit log",                            "fr": "Journal d'audit" },
+  "admin.audit.refresh":              { "en": "Refresh",                              "fr": "Actualiser" },
+  "admin.audit.empty":                { "en": "No entries yet.",                      "fr": "Aucune entrée pour l'instant." },
+  "admin.audit.col-time":             { "en": "Time",                                 "fr": "Heure" },
+  "admin.audit.col-actor":            { "en": "Actor",                                "fr": "Utilisateur" },
+  "admin.audit.col-action":           { "en": "Action",                               "fr": "Action" },
+  "admin.audit.col-detail":           { "en": "Detail",                               "fr": "Détail" },
+  "admin.audit.action.login":         { "en": "Login",                                "fr": "Connexion" },
+  "admin.audit.action.device-lock":   { "en": "Device locked",                        "fr": "Appareil verrouillé" },
+  "admin.audit.action.device-unlock": { "en": "Device unlocked",                      "fr": "Appareil déverrouillé" },
+  "admin.audit.action.user-create":   { "en": "User created",                         "fr": "Utilisateur créé" },
+  "admin.audit.action.user-delete":   { "en": "User deleted",                         "fr": "Utilisateur supprimé" },
+  "admin.audit.action.user-disable":  { "en": "User disabled",                        "fr": "Utilisateur désactivé" },
+  "admin.audit.action.user-enable":   { "en": "User enabled",                         "fr": "Utilisateur réactivé" },
+  "admin.audit.action.service-enable":{ "en": "Service enabled",                      "fr": "Service activé" },
+  "admin.audit.action.service-disable":{ "en": "Service disabled",                    "fr": "Service désactivé" }
 }

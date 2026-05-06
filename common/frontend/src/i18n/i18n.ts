@@ -28,7 +28,7 @@ export function getLanguage(): Lang {
   return _lang;
 }
 
-/** Return the translation for msgId in the current language, falling back to msgId itself. */
-export function t(msgId: string): string {
-  return _messages[msgId]?.[_lang] ?? msgId;
+/** Return the translation for msgId in the current language, falling back to fallback or msgId. */
+export function t(msgId: string, fallback?: string): string {
+  return _messages[msgId]?.[_lang] ?? fallback ?? msgId;
 }
