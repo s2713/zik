@@ -1,41 +1,72 @@
-"""Session API — demo user switching for Target 1.
+"""Session API — demo user switching and admin auth for Target 1.
 
 In production (Target 2+) login is handled by PAM / the OS login manager;
 these endpoints are demo-only stubs.
 """
+
+import time
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 _DEMO_USERS = ["alice", "bob", "charlie"]
+# Hardcoded for demo only — real PAM auth on Target 2.
+_ADMIN_PASSWORD = "admin"
+# Re-auth token lifetime in seconds.
+_REAUTH_TTL = 60
 
 
 def make_session_router(sessions: dict) -> list:
     """Return Starlette Route list for session endpoints, sharing the app sessions dict."""
 
     async def list_users(_request: Request) -> JSONResponse:
-        """Return the list of available demo users."""
+        """Return the list of available demo users (excludes admin)."""
         return JSONResponse(_DEMO_USERS)
 
     async def get_session(request: Request) -> JSONResponse:
-        """Return the active demo user for this browser session."""
+        """Return the active user and admin flag for this browser session."""
         sid = request.cookies.get("__Host-zik-session")
         session = sessions.get(sid, {}) if sid else {}
-        return JSONResponse({"user": session.get("user", None)})
+        return JSONResponse({
+            "user":     session.get("user", None),
+            "is_admin": session.get("is_admin", False),
+        })
 
     async def login(request: Request) -> JSONResponse:
-        """Set the active demo user for this session."""
+        """Set the active user for this session; admin requires a password."""
         sid = request.cookies.get("__Host-zik-session")
         if not sid or sid not in sessions:
             return JSONResponse({"ok": False, "error": "no session"}, status_code=401)
         body = await request.json()
         username: str = body.get("username", "")
+        if username == "admin":
+            # Admin login — verify password.
+            if body.get("password", "") != _ADMIN_PASSWORD:
+                return JSONResponse({"ok": False, "error": "wrong password"}, status_code=403)
+            sessions[sid]["user"]     = "admin"
+            sessions[sid]["is_admin"] = True
+            sessions[sid].pop("locked", None)
+            return JSONResponse({"ok": True, "user": "admin", "is_admin": True})
         if username not in _DEMO_USERS:
             return JSONResponse({"ok": False, "error": "unknown user"}, status_code=400)
-        sessions[sid]["user"] = username
+        sessions[sid]["user"]     = username
+        sessions[sid]["is_admin"] = False
         sessions[sid].pop("locked", None)
-        return JSONResponse({"ok": True, "user": username})
+        return JSONResponse({"ok": True, "user": username, "is_admin": False})
+
+    async def reauth(request: Request) -> JSONResponse:
+        """Verify admin password and stamp a re-auth timestamp in the session."""
+        sid = request.cookies.get("__Host-zik-session")
+        if not sid or sid not in sessions:
+            return JSONResponse({"ok": False, "error": "no session"}, status_code=401)
+        if not sessions[sid].get("is_admin"):
+            return JSONResponse({"ok": False, "error": "not admin"}, status_code=403)
+        body = await request.json()
+        if body.get("password", "") != _ADMIN_PASSWORD:
+            return JSONResponse({"ok": False, "error": "wrong password"}, status_code=403)
+        sessions[sid]["reauth_at"] = time.monotonic()
+        return JSONResponse({"ok": True})
 
     async def lock(request: Request) -> JSONResponse:
         """Mark the current session as screen-locked."""
@@ -46,8 +77,9 @@ def make_session_router(sessions: dict) -> list:
         return JSONResponse({"ok": True})
 
     return [
-        Route("/api/users",          list_users),
-        Route("/api/session",        get_session),
-        Route("/api/session/login",  login,  methods=["POST"]),
-        Route("/api/session/lock",   lock,   methods=["POST"]),
+        Route("/api/users",           list_users),
+        Route("/api/session",         get_session),
+        Route("/api/session/login",   login,  methods=["POST"]),
+        Route("/api/session/reauth",  reauth, methods=["POST"]),
+        Route("/api/session/lock",    lock,   methods=["POST"]),
     ]

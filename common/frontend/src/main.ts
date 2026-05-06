@@ -1,9 +1,10 @@
 import "./power-bar.js";      // registers <power-bar>
 import "./screen-lock.js";    // registers <screen-lock>
 import "./user-account.js";   // registers <user-account>
+import "./admin/admin-app.js"; // registers <admin-app>
 import { SERVICES_CHANGED_EVENT } from "./user-account.js";
 import { ensureCsrfToken } from "./csrf.js";
-import { USER_CHANGED_EVENT, currentUser, loadSession } from "./session.js";
+import { USER_CHANGED_EVENT, currentUser, isAdmin, loadSession } from "./session.js";
 import {
   SUPPORTED_LANGS,
   getLanguage,
@@ -80,19 +81,43 @@ function mountAccountPanel(): void {
   }
 }
 
+function mountAdminUI(): void {
+  // Admin view: no player elements, no service bar, no account panel.
+  if (!document.querySelector("admin-app"))
+    document.body.appendChild(document.createElement("admin-app"));
+}
+
 async function init(): Promise<void> {
   await loadMessages();
   await ensureCsrfToken();    // fetch CSRF cookie before any POST
-  await loadSession();        // initialise currentUser() before any localStorage access
+  await loadSession();        // initialise currentUser() / isAdmin() before any access
+
   renderLanguagePicker();
   mountPowerBar();
-  mountPlayer();
-  renderServiceToggles();
-  mountAccountPanel();
   mountScreenLock();
-  // Re-render service bar when service visibility or active user changes.
-  window.addEventListener(SERVICES_CHANGED_EVENT, () => renderServiceToggles());
-  window.addEventListener(USER_CHANGED_EVENT,     () => renderServiceToggles());
+
+  if (isAdmin()) {
+    mountAdminUI();
+  } else {
+    mountPlayer();
+    renderServiceToggles();
+    mountAccountPanel();
+    // Re-render service bar when visibility or active user changes.
+    window.addEventListener(SERVICES_CHANGED_EVENT, () => renderServiceToggles());
+  }
+
+  // Any role switch (user ↔ admin) needs a full re-init; same-role user
+  // switches just re-render the service bar.
+  window.addEventListener(USER_CHANGED_EVENT, (e) => {
+    const newUser   = (e as CustomEvent<string>).detail;
+    const wasAdmin  = isAdmin();   // reflects state from loadSession(), not yet updated
+    if (newUser === "admin" || wasAdmin) {
+      window.location.reload();
+    } else {
+      renderServiceToggles();
+    }
+  });
+
   await checkHealth();
 }
 

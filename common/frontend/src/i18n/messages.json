@@ -149,5 +149,18 @@
   "radio.loading":               { "en": "Loading…",                     "fr": "Chargement…" },
   "radio.no-results":            { "en": "No stations found.",            "fr": "Aucune station trouvée." },
   "radio.no-favorites":          { "en": "No favorites yet. Click ★ on a station to save it.", "fr": "Aucun favori. Cliquez sur ★ pour en ajouter." },
-  "radio.no-somafm":             { "en": "Could not load SomaFM channels.", "fr": "Impossible de charger les chaînes SomaFM." }
+  "radio.no-somafm":             { "en": "Could not load SomaFM channels.", "fr": "Impossible de charger les chaînes SomaFM." },
+
+  "admin.login":                 { "en": "Admin",                               "fr": "Admin" },
+  "admin.enter-password":        { "en": "Admin password",                      "fr": "Mot de passe admin" },
+  "admin.wrong-password":        { "en": "Wrong password.",                     "fr": "Mot de passe incorrect." },
+  "admin.stub":                  { "en": "Not yet implemented.",                "fr": "Pas encore implémenté." },
+  "admin.tab.users":             { "en": "User Management",                    "fr": "Utilisateurs" },
+  "admin.tab.services":          { "en": "Services",                           "fr": "Services" },
+  "admin.tab.network":           { "en": "Network",                            "fr": "Réseau" },
+  "admin.tab.device":            { "en": "Device",                             "fr": "Appareil" },
+  "admin.reauth.title":          { "en": "Confirm identity",                   "fr": "Confirmation d'identité" },
+  "admin.reauth.reason":         { "en": "This action requires your password.", "fr": "Cette action requiert votre mot de passe." },
+  "admin.reauth.confirm":        { "en": "Confirm",                            "fr": "Confirmer" },
+  "admin.reauth.cancel":         { "en": "Cancel",                             "fr": "Annuler" }
 }

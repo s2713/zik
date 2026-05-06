@@ -68,6 +68,51 @@ export class ScreenLockElement extends PlayerBase {
     }
     .user-btn:hover  { background: #222; border-color: #777; }
     .user-btn.active { border-color: #0057b8; color: #fff; }
+    .admin-btn {
+      padding: 0.5rem 1.4rem;
+      border: 1px solid #555;
+      border-radius: 6px;
+      background: #1a1a1a;
+      color: #aaa;
+      font-size: 0.9rem;
+      cursor: pointer;
+      margin-top: 0.5rem;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .admin-btn:hover { background: #222; border-color: #888; color: #ddd; }
+    .admin-form {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .admin-form input {
+      padding: 0.4rem 0.75rem;
+      border: 1px solid #555;
+      border-radius: 5px;
+      background: #111;
+      color: #eee;
+      font-size: 1rem;
+      width: 220px;
+    }
+    .admin-form .row { display: flex; gap: 0.5rem; }
+    .admin-form .err { color: #f55; font-size: 0.85rem; min-height: 1.2em; }
+    .admin-form .submit-btn {
+      padding: 0.4rem 1rem;
+      border: 1px solid #0057b8;
+      border-radius: 5px;
+      background: #0057b8;
+      color: #fff;
+      cursor: pointer;
+    }
+    .admin-form .back-btn {
+      padding: 0.4rem 1rem;
+      border: 1px solid #555;
+      border-radius: 5px;
+      background: transparent;
+      color: #aaa;
+      cursor: pointer;
+    }
   `;
 
   /** Idle timeout in seconds before locking. */
@@ -79,6 +124,9 @@ export class ScreenLockElement extends PlayerBase {
   @state() private _lockState: LockState = "idle";
   @state() private _clock = "";
   @state() private _users: string[] = [];
+  @state() private _adminMode  = false;   // password form visible
+  @state() private _adminPw    = "";
+  @state() private _adminError = "";
 
   private _idleTimer:     ReturnType<typeof setTimeout>  | null = null;
   private _lockTimer:     ReturnType<typeof setTimeout>  | null = null;
@@ -157,6 +205,27 @@ export class ScreenLockElement extends PlayerBase {
     this._resetIdleTimer();
   }
 
+  private async _submitAdmin(): Promise<void> {
+    // POST admin login; on success USER_CHANGED_EVENT triggers a page reload.
+    this._adminError = "";
+    try {
+      const r = await fetch("/api/session/login", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({ username: "admin", password: this._adminPw }),
+      });
+      if (!r.ok) {
+        this._adminError = t("admin.wrong-password");
+        this._adminPw = "";
+        return;
+      }
+    } catch {
+      this._adminError = t("admin.wrong-password");
+      return;
+    }
+    setCurrentUser("admin");   // fires USER_CHANGED_EVENT → main.ts reloads
+  }
+
   private async _selectUser(name: string): Promise<void> {
     const prev = currentUser();
     try {
@@ -197,20 +266,46 @@ export class ScreenLockElement extends PlayerBase {
       `;
     }
 
-    // Locked: show user-picker.
+    // Locked: show user-picker or admin password form.
     const active = currentUser();
     return html`
       <div class="overlay locked">
         <div class="clock">${this._clock}</div>
-        <div class="pick-label">${t("screen.pick-user")}</div>
-        <div class="users">
-          ${this._users.map((name) => html`
-            <button class="user-btn ${name === active ? "active" : ""}"
-                    @click=${() => void this._selectUser(name)}>
-              ${name}
-            </button>
-          `)}
-        </div>
+
+        ${this._adminMode ? html`
+          <!-- Admin password form -->
+          <div class="admin-form">
+            <div class="pick-label">${t("admin.enter-password")}</div>
+            <input type="password" .value=${this._adminPw}
+                   @input=${(e: Event) => { this._adminPw = (e.target as HTMLInputElement).value; }}
+                   @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") void this._submitAdmin(); }}
+                   autofocus />
+            <div class="err">${this._adminError}</div>
+            <div class="row">
+              <button class="back-btn"
+                      @click=${() => { this._adminMode = false; this._adminPw = ""; this._adminError = ""; }}>
+                ← ${t("screen.pick-user")}
+              </button>
+              <button class="submit-btn" @click=${() => void this._submitAdmin()}>
+                ${t("admin.login")}
+              </button>
+            </div>
+          </div>
+        ` : html`
+          <!-- Regular user picker + admin entry -->
+          <div class="pick-label">${t("screen.pick-user")}</div>
+          <div class="users">
+            ${this._users.map((name) => html`
+              <button class="user-btn ${name === active ? "active" : ""}"
+                      @click=${() => void this._selectUser(name)}>
+                ${name}
+              </button>
+            `)}
+          </div>
+          <button class="admin-btn" @click=${() => { this._adminMode = true; }}>
+            ${t("admin.login")}
+          </button>
+        `}
       </div>
     `;
   }
