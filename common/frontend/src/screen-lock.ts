@@ -1,7 +1,7 @@
 import { css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
-import { getCsrfHeaders } from "./csrf.js";
+import { ensureCsrfToken, getCsrfHeaders } from "./csrf.js";
 import { t } from "./i18n/i18n.js";
 import { PlayerBase } from "./player-base.js";
 import { USER_CHANGED_EVENT, currentUser, listUsers, setCurrentUser } from "./session.js";
@@ -208,12 +208,18 @@ export class ScreenLockElement extends PlayerBase {
   private async _submitAdmin(): Promise<void> {
     // POST admin login; on success USER_CHANGED_EVENT triggers a page reload.
     this._adminError = "";
+    const attempt = async () => fetch("/api/session/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...getCsrfHeaders() },
+      body: JSON.stringify({ username: "admin", password: this._adminPw }),
+    });
     try {
-      const r = await fetch("/api/session/login", {
-        method: "POST",
-        headers: { "content-type": "application/json", ...getCsrfHeaders() },
-        body: JSON.stringify({ username: "admin", password: this._adminPw }),
-      });
+      let r = await attempt();
+      // 401 = stale session (backend restarted); refresh and retry once.
+      if (r.status === 401) {
+        await ensureCsrfToken();
+        r = await attempt();
+      }
       if (!r.ok) {
         this._adminError = t("admin.wrong-password");
         this._adminPw = "";

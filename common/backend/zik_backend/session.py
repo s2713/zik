@@ -17,20 +17,30 @@ _ADMIN_PASSWORD = "admin"
 _REAUTH_TTL = 60
 
 
-def make_session_router(sessions: dict) -> list:
-    """Return Starlette Route list for session endpoints, sharing the app sessions dict."""
+def make_session_router(sessions: dict, users: dict | None = None) -> list:
+    """Return Starlette Route list for session endpoints, sharing the app sessions dict.
+
+    Pass the admin user store as `users` so /api/users stays in sync with
+    admin create/delete operations.  Falls back to _DEMO_USERS if omitted.
+    """
 
     async def list_users(_request: Request) -> JSONResponse:
         """Return the list of available demo users (excludes admin)."""
-        return JSONResponse(_DEMO_USERS)
+        return JSONResponse(list(users.keys()) if users is not None else _DEMO_USERS)
 
     async def get_session(request: Request) -> JSONResponse:
-        """Return the active user and admin flag for this browser session."""
+        """Return the active user, admin flag, and allowed service list."""
         sid = request.cookies.get("__Host-zik-session")
         session = sessions.get(sid, {}) if sid else {}
+        user = session.get("user", None)
+        # Resolve per-user allowed services from the user store.
+        allowed: list[str] | None = None
+        if user and user != "admin" and users is not None and user in users:
+            allowed = users[user].services
         return JSONResponse({
-            "user":     session.get("user", None),
-            "is_admin": session.get("is_admin", False),
+            "user":             user,
+            "is_admin":         session.get("is_admin", False),
+            "allowed_services": allowed,
         })
 
     async def login(request: Request) -> JSONResponse:
@@ -48,7 +58,8 @@ def make_session_router(sessions: dict) -> list:
             sessions[sid]["is_admin"] = True
             sessions[sid].pop("locked", None)
             return JSONResponse({"ok": True, "user": "admin", "is_admin": True})
-        if username not in _DEMO_USERS:
+        valid = set(users.keys()) if users is not None else set(_DEMO_USERS)
+        if username not in valid:
             return JSONResponse({"ok": False, "error": "unknown user"}, status_code=400)
         sessions[sid]["user"]     = username
         sessions[sid]["is_admin"] = False

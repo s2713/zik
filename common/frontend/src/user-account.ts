@@ -2,23 +2,14 @@ import { css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 
 import { getCsrfHeaders } from "./csrf.js";
+import { isGloballyEnabled } from "./global-services.js";
 import { t } from "./i18n/i18n.js";
 import { PlayerBase } from "./player-base.js";
-import { USER_CHANGED_EVENT, currentUser } from "./session.js";
+import { SERVICES } from "./services-list.js";
+import { USER_CHANGED_EVENT, allowedServices, currentUser } from "./session.js";
 
 /** Event dispatched on window when service visibility changes from this panel. */
 export const SERVICES_CHANGED_EVENT = "zik-services-changed";
-
-/** Matches the service list in main.ts; kept in sync via this constant. */
-const _SERVICES: Array<{ tag: string; i18nKey: string }> = [
-  { tag: "demo-player",     i18nKey: "service.demo"     },
-  { tag: "files-player",    i18nKey: "service.files"    },
-  { tag: "mpd-player",      i18nKey: "service.mpd"      },
-  { tag: "subsonic-player", i18nKey: "service.subsonic" },
-  { tag: "spotify-player",  i18nKey: "service.spotify"  },
-  { tag: "podcasts-player", i18nKey: "service.podcasts" },
-  { tag: "radio-player",    i18nKey: "service.radio"    },
-];
 
 /** Returns per-user localStorage keys so each user's prefs are independent. */
 function _visibleKey(): string { return `zik-demo.${currentUser()}.visible-services`; }
@@ -29,7 +20,7 @@ function _loadVisible(): Set<string> {
     const raw = localStorage.getItem(_visibleKey());
     if (raw) return new Set(JSON.parse(raw) as string[]);
   } catch { /* ignore */ }
-  return new Set(_SERVICES.map((s) => s.tag));
+  return new Set(SERVICES.map((s) => s.tag));
 }
 
 function _saveVisible(v: Set<string>): void {
@@ -247,7 +238,10 @@ export class UserAccountElement extends PlayerBase {
           <!-- Service visibility + share-with-admin -->
           <section>
             <h3>${t("account.my-services")}</h3>
-            ${_SERVICES.map(({ tag, i18nKey }) => this._renderServiceRow(tag, i18nKey))}
+            ${SERVICES
+                .filter(({ id }) => isGloballyEnabled(id) &&
+                  (allowedServices() === null || allowedServices()!.includes(id)))
+                .map(({ tag, i18nKey }) => this._renderServiceRow(tag, i18nKey))}
           </section>
 
           <!-- Password change -->

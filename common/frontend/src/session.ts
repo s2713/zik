@@ -7,8 +7,9 @@
 /** Event dispatched on window when the active user changes. */
 export const USER_CHANGED_EVENT = "zik-user-changed";
 
-let _currentUser = "guest";
-let _isAdmin     = false;
+let _currentUser      = "guest";
+let _isAdmin          = false;
+let _allowedServices: string[] | null = null;  // null = unrestricted (admin or no session)
 
 /** Returns the currently active demo username. */
 export function currentUser(): string {
@@ -18,6 +19,12 @@ export function currentUser(): string {
 /** Returns true if the current session belongs to the admin. */
 export function isAdmin(): boolean {
   return _isAdmin;
+}
+
+/** Returns the set of service IDs the current user is allowed to access,
+ *  or null when there is no restriction (admin or no ACL loaded). */
+export function allowedServices(): string[] | null {
+  return _allowedServices;
 }
 
 /** Updates the active user and fires USER_CHANGED_EVENT on window. */
@@ -30,12 +37,18 @@ export function setCurrentUser(name: string): void {
 export async function loadSession(): Promise<void> {
   try {
     const res  = await fetch("/api/session");
-    const data = (await res.json()) as { user: string | null; is_admin: boolean };
-    _currentUser = data.user     ?? "guest";
-    _isAdmin     = data.is_admin ?? false;
+    const data = (await res.json()) as {
+      user: string | null;
+      is_admin: boolean;
+      allowed_services: string[] | null;
+    };
+    _currentUser      = data.user             ?? "guest";
+    _isAdmin          = data.is_admin         ?? false;
+    _allowedServices  = data.allowed_services ?? null;
   } catch {
-    _currentUser = "guest";
-    _isAdmin     = false;
+    _currentUser     = "guest";
+    _isAdmin         = false;
+    _allowedServices = null;
   }
 }
 

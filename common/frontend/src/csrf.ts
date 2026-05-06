@@ -10,11 +10,10 @@ function readCsrfCookie(): string | null {
   return null;
 }
 
-/** GET /api/csrf-token if the cookie is absent; idempotent. */
+/** GET /api/csrf-token on every init to ensure the backend session exists.
+ *  Idempotent: server reuses the existing session if the cookie is still valid. */
 export async function ensureCsrfToken(): Promise<void> {
-  if (!readCsrfCookie()) {
-    await fetch("/api/csrf-token");
-  }
+  await fetch("/api/csrf-token");
 }
 
 /** Return the x-csrf-token header map for use in POST requests. */

@@ -12,6 +12,8 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket
 
+from .admin import UserRecord, make_admin_router, make_user_store
+from .admin_services import ServiceRecord, make_admin_services_router, make_service_store
 from .helper_client import HelperClient
 from .middleware import CsrfDoubleSubmitMiddleware, OriginCheckMiddleware
 from .player import PlayerManager, state_as_dict
@@ -46,8 +48,12 @@ class _SuppressPath(logging.Filter):
         return not any(p in msg for p in self._paths)
 
 
-# In-memory session store — placeholder until A1 adds real auth state.
+# In-memory session store.
 _sessions: dict[str, dict] = {}
+# In-memory user store — seeded from demo users; shared by session + admin routers.
+_demo_users: dict[str, UserRecord] = make_user_store(["alice", "bob", "charlie"])
+# In-memory service store — global enable flags + shared credentials.
+_demo_services: dict[str, ServiceRecord] = make_service_store()
 
 
 async def health(_request: Request) -> JSONResponse:
@@ -265,7 +271,9 @@ def make_app(
             *make_quota_router(library_db, _offline_dir),
             *make_radio_router(library_db),
             *make_power_router(),
-            *make_session_router(_sessions),
+            *make_session_router(_sessions, _demo_users),
+            *make_admin_router(_sessions, _demo_users),
+            *make_admin_services_router(_sessions, _demo_services),
             *make_user_router(),
         ],
         lifespan=_lifespan,

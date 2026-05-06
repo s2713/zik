@@ -4,7 +4,7 @@ import "./user-account.js";   // registers <user-account>
 import "./admin/admin-app.js"; // registers <admin-app>
 import { SERVICES_CHANGED_EVENT } from "./user-account.js";
 import { ensureCsrfToken } from "./csrf.js";
-import { USER_CHANGED_EVENT, currentUser, isAdmin, loadSession } from "./session.js";
+import { USER_CHANGED_EVENT, allowedServices, currentUser, isAdmin, loadSession } from "./session.js";
 import {
   SUPPORTED_LANGS,
   getLanguage,
@@ -12,6 +12,8 @@ import {
   setLanguage,
   t,
 } from "./i18n/i18n.js";
+import { SERVICES } from "./services-list.js";
+import { isGloballyEnabled, loadGlobalServices } from "./global-services.js";
 import "./services/demo/demo-player-element.js";  // registers <demo-player>
 import "./services/files/files-player-element.js"; // registers <files-player>
 import "./services/mpd/mpd-player-element.js";        // registers <mpd-player>
@@ -19,16 +21,6 @@ import "./services/subsonic/subsonic-player-element.js"; // registers <subsonic-
 import "./services/spotify/spotify-player-element.js";   // registers <spotify-player>
 import "./services/podcasts/podcasts-player-element.js"; // registers <podcasts-player>
 import "./services/radio/radio-player-element.js";       // registers <radio-player>
-
-const _SERVICES: Array<{ tag: string; i18nKey: string }> = [
-  { tag: "demo-player",     i18nKey: "service.demo"     },
-  { tag: "files-player",    i18nKey: "service.files"    },
-  { tag: "mpd-player",      i18nKey: "service.mpd"      },
-  { tag: "subsonic-player", i18nKey: "service.subsonic" },
-  { tag: "spotify-player",  i18nKey: "service.spotify"  },
-  { tag: "podcasts-player", i18nKey: "service.podcasts" },
-  { tag: "radio-player",    i18nKey: "service.radio"    },
-];
 
 /** Per-user localStorage key so each user's service visibility is independent. */
 function _visibleKey(): string { return `zik-demo.${currentUser()}.visible-services`; }
@@ -38,17 +30,24 @@ function _loadVisible(): Set<string> {
     const raw = localStorage.getItem(_visibleKey());
     if (raw) return new Set(JSON.parse(raw) as string[]);
   } catch { /* ignore */ }
-  return new Set(_SERVICES.map((s) => s.tag)); // default: all visible
+  return new Set(SERVICES.map((s) => s.tag)); // default: all visible
 }
 
 function _saveVisible(visible: Set<string>): void {
   localStorage.setItem(_visibleKey(), JSON.stringify([...visible]));
 }
 
+function _isServiceVisible(tag: string, id: string, visible: Set<string>): boolean {
+  if (!isGloballyEnabled(id)) return false;
+  const allowed = allowedServices();
+  if (allowed !== null && !allowed.includes(id)) return false;
+  return visible.has(tag);
+}
+
 function _applyVisibility(visible: Set<string>): void {
-  for (const { tag } of _SERVICES) {
+  for (const { tag, id } of SERVICES) {
     const el = document.querySelector(tag) as HTMLElement | null;
-    if (el) el.style.display = visible.has(tag) ? "" : "none";
+    if (el) el.style.display = _isServiceVisible(tag, id, visible) ? "" : "none";
   }
 }
 
@@ -89,8 +88,9 @@ function mountAdminUI(): void {
 
 async function init(): Promise<void> {
   await loadMessages();
-  await ensureCsrfToken();    // fetch CSRF cookie before any POST
-  await loadSession();        // initialise currentUser() / isAdmin() before any access
+  await ensureCsrfToken();       // fetch CSRF cookie before any POST
+  await loadSession();           // initialise currentUser() / isAdmin() before any access
+  await loadGlobalServices();    // fetch global service enable flags
 
   renderLanguagePicker();
   mountPowerBar();
@@ -169,7 +169,10 @@ function renderServiceToggles(): void {
   label.style.cssText = "align-self:center;color:#666;";
   bar.appendChild(label);
 
-  for (const { tag, i18nKey } of _SERVICES) {
+  for (const { tag, i18nKey, id } of SERVICES) {
+    if (!isGloballyEnabled(id)) continue;
+    const allowed = allowedServices();
+    if (allowed !== null && !allowed.includes(id)) continue;   // skip services admin denied this user
     const btn = document.createElement("button");
     btn.textContent = t(i18nKey);
     const isVisible = visible.has(tag);
