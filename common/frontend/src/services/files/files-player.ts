@@ -8,6 +8,7 @@ export interface FileTrack {
   duration: number;
   track_number: number | null;
   year: number | null;
+  source_id: string;
 }
 
 export interface FilesPlayerState {

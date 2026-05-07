@@ -6,7 +6,7 @@ import { getCsrfHeaders } from "./csrf.js";
 import { isGloballyEnabled } from "./global-services.js";
 import { t } from "./i18n/i18n.js";
 import { SUPPORTED_LANGS, getLanguage, setLanguage } from "./i18n/i18n.js";
-import { dispatchPlayerCmd } from "./player-bus.js";
+import { dispatchPlayerCmd, playerBus, type PlaylistStateEvent } from "./player-bus.js";
 import { PlayerBase } from "./player-base.js";
 import { LOCK_REQUEST_EVENT } from "./screen-lock.js";
 import { SERVICE_ICONS } from "./service-icons.js";
@@ -31,6 +31,19 @@ declare global {
 }
 
 type PowerAction = "poweroff" | "suspend" | "hibernate";
+
+function fmtTime(s: number): string {
+  const m = Math.floor(s / 60);
+  return `${m}:${Math.floor(s % 60).toString().padStart(2, "0")}`;
+}
+function fmtTotalDur(s: number): string {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  return h > 0
+    ? `${h}:${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`
+    : `${m}:${sec.toString().padStart(2, "0")}`;
+}
 
 interface PlayerStateData {
   status:   "playing" | "paused" | "stopped";
@@ -243,7 +256,7 @@ export class UserShell extends PlayerBase {
     /* ---- footer transport bar ---- */
     .footer {
       position: fixed; bottom: 0; left: 0; right: 0;
-      height: 64px;
+      height: 76px;
       background: #1e293b;
       border-top: 1px solid #334155;
       display: flex; align-items: center;
@@ -267,9 +280,33 @@ export class UserShell extends PlayerBase {
       background: rgba(255,255,255,0.16); font-size: 1.2rem;
     }
     .ctrl-btn.play-btn:hover { background: rgba(255,255,255,0.24); }
-    .footer-track { flex: 1; min-width: 0; padding: 0 0.5rem; }
-    .track-title  { font-size: 0.9rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .track-sub    { font-size: 0.78rem; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .footer-track {
+      flex: 1; min-width: 0; padding: 0 0.5rem;
+      display: flex; flex-direction: column; justify-content: center; gap: 3px;
+    }
+    .track-title { font-size: 0.9rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .track-sub   { font-size: 0.82em; color: #94a3b8; font-weight: 400; }
+    .track-progress-row {
+      display: flex; align-items: center; gap: 0.4rem;
+    }
+    .track-bar {
+      flex: 1; height: 3px; background: #334155;
+      border-radius: 2px; overflow: hidden;
+    }
+    .track-fill {
+      height: 100%; background: #60a5fa; border-radius: 2px;
+      transition: width 0.9s linear;
+    }
+    .track-time {
+      font-size: 0.72rem; color: #64748b; white-space: nowrap;
+      flex-shrink: 0; font-variant-numeric: tabular-nums;
+    }
+    .footer-stats {
+      display: flex; flex-direction: column; align-items: flex-end;
+      font-size: 0.72rem; color: #64748b; white-space: nowrap;
+      flex-shrink: 0; padding: 0 0.1rem; gap: 2px;
+    }
+    .footer-stats-bold { font-size: 0.78rem; color: #94a3b8; }
     .footer-vol {
       display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0;
     }
@@ -436,7 +473,9 @@ export class UserShell extends PlayerBase {
   @state() private _pwBusy = false;
 
   // ---- player state (polled for footer display) ----
-  @state() private _playerState: PlayerStateData | null = null;
+  @state() private _playerState:  PlayerStateData   | null = null;
+  // ---- live playlist state pushed by the active service player ----
+  @state() private _playlistState: PlaylistStateEvent | null = null;
 
   // ---- volume / mute ----
   @state() private _volume = 80;   // desired level 0–100 (persisted across mute)
@@ -445,6 +484,10 @@ export class UserShell extends PlayerBase {
   private _battery:    BatteryManager | null = null;
   private _toastTimer: ReturnType<typeof setTimeout>  | null = null;
   private _pollTimer:  ReturnType<typeof setInterval> | null = null;
+
+  private readonly _onPlaylistState = (e: Event): void => {
+    this._playlistState = (e as CustomEvent<PlaylistStateEvent>).detail;
+  };
 
   private readonly _onUserChanged = (e: Event): void => {
     this._user    = (e as CustomEvent<string>).detail;
@@ -463,6 +506,7 @@ export class UserShell extends PlayerBase {
   override connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener(USER_CHANGED_EVENT, this._onUserChanged);
+    playerBus.addEventListener("playlist-state", this._onPlaylistState);
     void this._initBattery();
     this._pollTimer = setInterval(() => void this._pollPlayer(), 2000);
   }
@@ -470,6 +514,7 @@ export class UserShell extends PlayerBase {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     window.removeEventListener(USER_CHANGED_EVENT, this._onUserChanged);
+    playerBus.removeEventListener("playlist-state", this._onPlaylistState);
     if (this._battery) {
       this._battery.removeEventListener("chargingchange", this._onBatteryChange);
       this._battery.removeEventListener("levelchange",    this._onBatteryChange);
@@ -778,12 +823,19 @@ export class UserShell extends PlayerBase {
   // ---- render: persistent footer transport bar ----
   private _renderFooter(): TemplateResult {
     const ps      = this._playerState;
+    const pl      = this._playingId === "files" ? this._playlistState : null;
     const playing = ps?.status === "playing";
     const title   = ps?.track?.title  ?? "";
     const artist  = ps?.track?.artist ?? "";
     const vol     = this._muted ? 0 : this._volume;
     const muteIcon = this._muted || this._volume === 0 ? "🔇"
       : this._volume < 40 ? "🔈" : this._volume < 75 ? "🔉" : "🔊";
+
+    // Prefer live position from files player (1 s resolution); fall back to backend poll.
+    const pos = pl?.position ?? ps?.position ?? 0;
+    const dur = pl?.duration ?? ps?.track?.duration ?? 0;
+    const pct = dur > 0 ? Math.min(100, (pos / dur) * 100) : 0;
+
     return html`
       <footer class="footer">
 
@@ -799,13 +851,31 @@ export class UserShell extends PlayerBase {
           <button class="ctrl-btn" @click=${() => this._cmd("next")} aria-label="Next">⏭</button>
         </div>
 
-        <!-- now-playing info -->
+        <!-- now-playing info + progress bar -->
         <div class="footer-track">
           ${title ? html`
-            <div class="track-title">${title}</div>
-            ${artist ? html`<div class="track-sub">${artist}</div>` : nothing}
+            <div class="track-title">
+              ${title}${artist ? html`<span class="track-sub"> · ${artist}</span>` : nothing}
+            </div>
+            <div class="track-progress-row">
+              <span class="track-time">${fmtTime(pos)}</span>
+              <div class="track-bar">
+                <div class="track-fill" style="width:${pct}%"></div>
+              </div>
+              ${dur > 0 ? html`<span class="track-time">${fmtTime(dur)}</span>` : nothing}
+            </div>
           ` : nothing}
         </div>
+
+        <!-- playlist stats (files service only) -->
+        ${pl && pl.total > 0 ? html`
+          <div class="footer-stats">
+            <span class="footer-stats-bold">
+              ${pl.index >= 0 ? `${pl.index + 1} / ${pl.total}` : `– / ${pl.total}`}
+            </span>
+            <span>${fmtTotalDur(pl.totalDuration)}</span>
+          </div>
+        ` : nothing}
 
         <!-- volume + mute -->
         <div class="footer-vol">

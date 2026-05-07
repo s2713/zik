@@ -4,9 +4,11 @@ import logging
 import os
 import uuid
 
+import httpx
+from mutagen import File as MutagenFile
 from starlette.background import BackgroundTask
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from .db import LibraryDB
@@ -15,6 +17,69 @@ from .scanner import scan_directory
 from .sources import Source, SourceManager
 
 logger = logging.getLogger(__name__)
+
+# ---- cover-art cache: track_id → (bytes, mime) | None ----
+_cover_cache: dict[str, tuple[bytes, str] | None] = {}
+
+# ---- artist-image cache: lowercase name → url | None ----
+_artist_image_cache: dict[str, str | None] = {}
+
+
+def _extract_cover(path: str) -> tuple[bytes, str] | None:
+    """Extract embedded cover art from an audio file using mutagen."""
+    try:
+        f = MutagenFile(path)
+        if f is None:
+            return None
+        tags = getattr(f, "tags", None) or {}
+        # ID3 (MP3): APIC frames
+        for key in tags:
+            if key.startswith("APIC"):
+                apic = tags[key]
+                return bytes(apic.data), apic.mime or "image/jpeg"
+        # Vorbis / FLAC: picture blocks
+        pictures = getattr(f, "pictures", [])
+        if pictures:
+            pic = pictures[0]
+            return bytes(pic.data), pic.mime or "image/jpeg"
+        # MP4 / M4A: covr atom
+        if "covr" in tags:
+            data = tags["covr"][0]
+            return bytes(data), "image/jpeg"
+    except Exception:
+        pass
+    return None
+
+
+async def _fetch_artist_image(name: str) -> str | None:
+    """Query the Wikipedia pageimages API; return a thumbnail URL or None."""
+    key = name.strip().lower()
+    if key in _artist_image_cache:
+        return _artist_image_cache[key]
+    url = None
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(
+                "https://en.wikipedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "titles": name,
+                    "prop": "pageimages",
+                    "format": "json",
+                    "pithumbsize": 200,
+                    "pilimit": 1,
+                },
+            )
+        pages = r.json().get("query", {}).get("pages", {})
+        for page in pages.values():
+            thumb = page.get("thumbnail", {})
+            if thumb.get("source"):
+                url = thumb["source"]
+                break
+    except Exception:
+        pass
+    _artist_image_cache[key] = url
+    return url
 
 
 def make_files_router(db: LibraryDB, source_manager: SourceManager) -> list:
@@ -66,6 +131,32 @@ def make_files_router(db: LibraryDB, source_manager: SourceManager) -> list:
         if not os.path.isfile(path):
             return JSONResponse({"error": "file missing"}, status_code=404)
         return FileResponse(path)
+
+    async def cover(request: Request) -> Response | JSONResponse:
+        """Return embedded cover art for a track; cached in memory."""
+        track_id = request.path_params["track_id"]
+        if track_id not in _cover_cache:
+            row = await db.get_track(track_id)
+            if row is None:
+                _cover_cache[track_id] = None
+            else:
+                _cover_cache[track_id] = _extract_cover(row["path"])
+        result = _cover_cache[track_id]
+        if result is None:
+            return JSONResponse({"error": "no cover art"}, status_code=404)
+        data, mime = result
+        return Response(content=data, media_type=mime,
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+    async def artist_image(request: Request) -> JSONResponse:
+        """Return a Wikipedia thumbnail URL for an artist name."""
+        name = request.query_params.get("name", "").strip()
+        if not name:
+            return JSONResponse({"error": "missing name"}, status_code=400)
+        url = await _fetch_artist_image(name)
+        if url is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return JSONResponse({"url": url})
 
     async def list_sources(_request: Request) -> JSONResponse:
         """Return all configured sources with their mount status."""
@@ -181,12 +272,14 @@ def make_files_router(db: LibraryDB, source_manager: SourceManager) -> list:
         return JSONResponse({"ok": True})
 
     return [
-        Route("/api/files/scan", scan, methods=["POST"]),
-        Route("/api/files/tracks", list_tracks),
-        Route("/api/files/audio/{track_id}", audio),
-        Route("/api/files/sources", list_sources),
-        Route("/api/files/sources/{source_id}/mount", mount_source, methods=["POST"]),
+        Route("/api/files/scan",                        scan,          methods=["POST"]),
+        Route("/api/files/tracks",                      list_tracks),
+        Route("/api/files/audio/{track_id}",            audio),
+        Route("/api/files/cover/{track_id}",            cover),
+        Route("/api/files/artist-image",                artist_image),
+        Route("/api/files/sources",                     list_sources),
+        Route("/api/files/sources/{source_id}/mount",   mount_source,  methods=["POST"]),
         Route("/api/files/sources/{source_id}/unmount", unmount_source, methods=["POST"]),
-        Route("/api/files/lan", add_lan, methods=["POST"]),
-        Route("/api/files/lan/{source_id}", remove_lan, methods=["DELETE"]),
+        Route("/api/files/lan",                         add_lan,       methods=["POST"]),
+        Route("/api/files/lan/{source_id}",             remove_lan,    methods=["DELETE"]),
     ]

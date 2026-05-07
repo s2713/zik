@@ -14,3 +14,16 @@ export const playerBus = new EventTarget();
 export function dispatchPlayerCmd(cmd: PlayerBusCmd): void {
   playerBus.dispatchEvent(new CustomEvent<PlayerBusCmd>("cmd", { detail: cmd }));
 }
+
+/**
+ * Service players emit this on playerBus (event name "playlist-state") to give
+ * the footer real-time playback and playlist info without going through the backend.
+ */
+export interface PlaylistStateEvent {
+  serviceId: string;
+  index: number;          // 0-based current track index; -1 when nothing loaded
+  total: number;          // total tracks in playlist
+  totalDuration: number;  // sum of all track durations, seconds
+  position: number;       // current playback position, seconds
+  duration: number;       // current track duration, seconds
+}
