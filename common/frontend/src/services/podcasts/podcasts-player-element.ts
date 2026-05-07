@@ -5,6 +5,7 @@ import { live } from "lit/directives/live.js";
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
 import { VolumeNormalizer } from "../../audio/normalizer.js";
+import { type PlayerBusCmd, playerBus } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
 
 interface PodcastFeed {
@@ -165,8 +166,22 @@ export class PodcastsPlayerElement extends PlayerBase {
   // Keep EventSource refs so we can close them on disconnect.
   private readonly _eventSources = new Map<string, EventSource>();
 
+  private readonly _onBusCmd = (e: Event): void => {
+    const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
+    if (cmd.serviceId !== "podcasts") return;
+    switch (cmd.type) {
+      case "Play":      void this._audio.play(); break;
+      case "Pause":     this._audio.pause();     break;
+      case "Stop":      this._audio.pause(); this._audio.currentTime = 0; break;
+      case "Next":      void this._playNext();   break;
+      case "Previous":  this._playPrev();        break;
+      case "SetVolume": this._volume = cmd.volume; this._audio.volume = cmd.volume; break;
+    }
+  };
+
   override connectedCallback(): void {
     super.connectedCallback();
+    playerBus.addEventListener("cmd", this._onBusCmd);
     this._audio.addEventListener("timeupdate", () => {
       this._elapsed  = this._audio.currentTime;
       this._duration = isFinite(this._audio.duration) ? this._audio.duration : 0;
@@ -186,6 +201,7 @@ export class PodcastsPlayerElement extends PlayerBase {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    playerBus.removeEventListener("cmd", this._onBusCmd);
     this._audio.pause();
     this._audio.src = "";
     this._normalizer.disconnect();

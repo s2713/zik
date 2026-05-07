@@ -134,6 +134,16 @@
   "session.logged-in-as":      { "en": "▸ {user}",                    "fr": "▸ {user}" },
   "session.lock":              { "en": "Lock",                         "fr": "Verrouiller" },
 
+  "shell.back":                   { "en": "Back",                           "fr": "Retour" },
+  "shell.settings":               { "en": "Settings",                       "fr": "Paramètres" },
+  "shell.logout":                 { "en": "Log out",                        "fr": "Se déconnecter" },
+  "shell.no-services":            { "en": "No services enabled.",           "fr": "Aucun service activé." },
+  "shell.power-confirm":          { "en": "Power off the device?",          "fr": "Éteindre l'appareil ?" },
+  "shell.cancel":                 { "en": "Cancel",                         "fr": "Annuler" },
+  "shell.connectivity.wifi":      { "en": "Wi-Fi",                          "fr": "Wi-Fi" },
+  "shell.connectivity.bt":        { "en": "Bluetooth",                      "fr": "Bluetooth" },
+  "shell.connectivity.stub":      { "en": "Connectivity configuration will be available in a future update.", "fr": "La configuration de la connectivité sera disponible dans une prochaine mise à jour." },
+
   "power.poweroff":            { "en": "Power off",                     "fr": "Éteindre" },
   "power.suspend":             { "en": "Suspend",                       "fr": "Veille" },
   "power.hibernate":           { "en": "Hibernate",                     "fr": "Hibernation" },

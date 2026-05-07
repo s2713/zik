@@ -4,6 +4,7 @@ import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
+import { type PlayerBusCmd, playerBus } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
 
 type SortKey = "title" | "artist" | "album" | "year";
@@ -104,13 +105,28 @@ export class SpotifyPlayerElement extends PlayerBase {
 
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
 
+  private readonly _onBusCmd = (e: Event): void => {
+    const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
+    if (cmd.serviceId !== "spotify") return;
+    switch (cmd.type) {
+      case "Play":      void this._command(this._playing ? "Play" : "Play"); break;
+      case "Pause":     void this._command("Pause");    break;
+      case "Stop":      void this._command("Pause");    break;  // Spotify has no Stop
+      case "Next":      void this._command("Next");     break;
+      case "Previous":  void this._command("Previous"); break;
+      case "SetVolume": void this._command("Volume", { percent: Math.round(cmd.volume * 100) }); break;
+    }
+  };
+
   override connectedCallback(): void {
     super.connectedCallback();
+    playerBus.addEventListener("cmd", this._onBusCmd);
     void this._fetchStatus();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    playerBus.removeEventListener("cmd", this._onBusCmd);
     this._stopPolling();
   }
 

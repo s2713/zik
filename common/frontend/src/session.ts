@@ -10,6 +10,9 @@ export const USER_CHANGED_EVENT = "zik-user-changed";
 let _currentUser      = "guest";
 let _isAdmin          = false;
 let _allowedServices: string[] | null = null;  // null = unrestricted (admin or no session)
+let _canBluetooth     = true;
+let _canWifi          = true;
+let _canWifiAdd       = false;
 
 /** Returns the currently active demo username. */
 export function currentUser(): string {
@@ -23,9 +26,16 @@ export function isAdmin(): boolean {
 
 /** Returns the set of service IDs the current user is allowed to access,
  *  or null when there is no restriction (admin or no ACL loaded). */
-export function allowedServices(): string[] | null {
-  return _allowedServices;
-}
+export function allowedServices(): string[] | null { return _allowedServices; }
+
+/** Returns true if the current user is allowed to use Bluetooth. */
+export function canBluetooth(): boolean { return _canBluetooth; }
+
+/** Returns true if the current user is allowed to connect to Wi-Fi. */
+export function canWifi(): boolean { return _canWifi; }
+
+/** Returns true if the current user is allowed to add new Wi-Fi networks. */
+export function canWifiAdd(): boolean { return _canWifiAdd; }
 
 /** Updates the active user and fires USER_CHANGED_EVENT on window. */
 export function setCurrentUser(name: string): void {
@@ -38,13 +48,17 @@ export async function loadSession(): Promise<void> {
   try {
     const res  = await fetch("/api/session");
     const data = (await res.json()) as {
-      user: string | null;
-      is_admin: boolean;
+      user:             string | null;
+      is_admin:         boolean;
       allowed_services: string[] | null;
+      permissions:      { bluetooth: boolean; wifi: boolean; wifi_add: boolean } | null;
     };
-    _currentUser      = data.user             ?? "guest";
-    _isAdmin          = data.is_admin         ?? false;
-    _allowedServices  = data.allowed_services ?? null;
+    _currentUser     = data.user             ?? "guest";
+    _isAdmin         = data.is_admin         ?? false;
+    _allowedServices = data.allowed_services ?? null;
+    _canBluetooth    = data.permissions?.bluetooth ?? true;
+    _canWifi         = data.permissions?.wifi      ?? true;
+    _canWifiAdd      = data.permissions?.wifi_add  ?? false;
   } catch {
     _currentUser     = "guest";
     _isAdmin         = false;

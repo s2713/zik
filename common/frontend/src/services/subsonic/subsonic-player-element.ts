@@ -5,6 +5,7 @@ import { live } from "lit/directives/live.js";
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
 import { VolumeNormalizer } from "../../audio/normalizer.js";
+import { type PlayerBusCmd, playerBus } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
 
 type SortKey = "title" | "artist" | "album" | "year";
@@ -114,8 +115,22 @@ export class SubsonicPlayerElement extends PlayerBase {
 
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
 
+  private readonly _onBusCmd = (e: Event): void => {
+    const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
+    if (cmd.serviceId !== "subsonic") return;
+    switch (cmd.type) {
+      case "Play":      void this._audio.play(); break;
+      case "Pause":     this._pause();           break;
+      case "Stop":      this._stop();            break;
+      case "Next":      void this._playNext();   break;
+      case "Previous":  this._playPrev();        break;
+      case "SetVolume": this._volume = cmd.volume; this._audio.volume = cmd.volume; break;
+    }
+  };
+
   override connectedCallback(): void {
     super.connectedCallback();
+    playerBus.addEventListener("cmd", this._onBusCmd);
 
     // Update seek bar and duration from audio events.
     this._audio.addEventListener("timeupdate", () => {
@@ -141,6 +156,7 @@ export class SubsonicPlayerElement extends PlayerBase {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    playerBus.removeEventListener("cmd", this._onBusCmd);
     this._stopPolling();
     this._audio.pause();
     this._audio.src = "";

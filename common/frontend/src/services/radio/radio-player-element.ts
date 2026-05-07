@@ -5,6 +5,7 @@ import { live } from "lit/directives/live.js";
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
 import { VolumeNormalizer } from "../../audio/normalizer.js";
+import { type PlayerBusCmd, playerBus } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
 
 type View = "somafm" | "search" | "favorites";
@@ -110,8 +111,21 @@ export class RadioPlayerElement extends PlayerBase {
   private readonly _audio      = new Audio();
   private readonly _normalizer = new VolumeNormalizer();
 
+  private readonly _onBusCmd = (e: Event): void => {
+    const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
+    if (cmd.serviceId !== "radio") return;
+    switch (cmd.type) {
+      case "Play":      void this._audio.play(); break;
+      case "Pause":     this._audio.pause();     break;
+      case "Stop":      this._audio.pause(); this._audio.currentTime = 0; break;
+      case "SetVolume": this._volume = cmd.volume; this._audio.volume = cmd.volume; break;
+      default: break;  // no next/prev for radio streams
+    }
+  };
+
   override connectedCallback(): void {
     super.connectedCallback();
+    playerBus.addEventListener("cmd", this._onBusCmd);
     this._audio.addEventListener("play",  () => { this._playing = true;  void this._notifyPlayer("Play");  });
     this._audio.addEventListener("pause", () => { this._playing = false; void this._notifyPlayer("Pause"); });
     this._audio.addEventListener("error", () => {
@@ -126,6 +140,7 @@ export class RadioPlayerElement extends PlayerBase {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    playerBus.removeEventListener("cmd", this._onBusCmd);
     this._audio.pause();
     this._audio.src = "";
     this._normalizer.disconnect();

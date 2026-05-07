@@ -4,6 +4,7 @@ import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
+import { type PlayerBusCmd, playerBus } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
 import { DemoPlayer, type PlayerState, TRACKS } from "./player.js";
 
@@ -32,14 +33,30 @@ export class DemoPlayerElement extends PlayerBase {
 
   @state() private _ps: PlayerState = { ...this._player.state };
 
+  // Handle footer transport commands targeting this service.
+  private readonly _onBusCmd = (e: Event): void => {
+    const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
+    if (cmd.serviceId !== "demo") return;
+    switch (cmd.type) {
+      case "Play":      this._play();  break;
+      case "Pause":     this._pause(); break;
+      case "Stop":      this._stop();  break;
+      case "Next":      this._next();  break;
+      case "Previous":  this._prev();  break;
+      case "SetVolume": this._player.setVolume(cmd.volume); break;
+    }
+  };
+
   override connectedCallback(): void {
     super.connectedCallback();
     this._player.addEventListener("statechange", this._onStateChange);
+    playerBus.addEventListener("cmd", this._onBusCmd);
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this._player.removeEventListener("statechange", this._onStateChange);
+    playerBus.removeEventListener("cmd", this._onBusCmd);
     this._player.stop();
   }
 

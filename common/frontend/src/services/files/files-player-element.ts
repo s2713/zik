@@ -5,6 +5,7 @@ import { live } from "lit/directives/live.js";
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
 import { VolumeNormalizer } from "../../audio/normalizer.js";
+import { type PlayerBusCmd, playerBus } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
 import { FilesPlayer, type FileTrack, type FilesPlayerState } from "./files-player.js";
 
@@ -103,9 +104,23 @@ export class FilesPlayerElement extends PlayerBase {
     label: "", server: "", share: "", subpath: "", username: "", password: "",
   };
 
+  private readonly _onBusCmd = (e: Event): void => {
+    const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
+    if (cmd.serviceId !== "files") return;
+    const ps = this._ps;
+    switch (cmd.type) {
+      case "Play":      if (ps.status === "paused") this._resume(); break;
+      case "Pause":     this._pause(); break;
+      case "Stop":      this._stop();  break;
+      case "SetVolume": this._player.setVolume(cmd.volume); break;
+      default: break;  // next/prev require a playlist context; ignore
+    }
+  };
+
   override connectedCallback(): void {
     super.connectedCallback();
     this._player.addEventListener("statechange", this._onStateChange);
+    playerBus.addEventListener("cmd", this._onBusCmd);
     void this._fetchSources();
     void this._fetchTracks();
   }
@@ -113,6 +128,7 @@ export class FilesPlayerElement extends PlayerBase {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this._player.removeEventListener("statechange", this._onStateChange);
+    playerBus.removeEventListener("cmd", this._onBusCmd);
     this._player.stop();
     this._normalizer.disconnect();
   }

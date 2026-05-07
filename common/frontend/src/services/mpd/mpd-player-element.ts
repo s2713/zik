@@ -5,6 +5,7 @@ import { live } from "lit/directives/live.js";
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
 import { VolumeNormalizer } from "../../audio/normalizer.js";
+import { type PlayerBusCmd, playerBus } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
 
 type SortKey = "title" | "artist" | "album";
@@ -120,17 +121,32 @@ export class MpdPlayerElement extends PlayerBase {
   private _pollTimer:        ReturnType<typeof setInterval> | null = null;
   private _lastNotifyKey = "";  // "state:file" — avoids redundant MPRIS events
 
+  private readonly _onBusCmd = (e: Event): void => {
+    const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
+    if (cmd.serviceId !== "mpd") return;
+    switch (cmd.type) {
+      case "Play":      void this._resume(); break;
+      case "Pause":     void this._pause();  break;
+      case "Stop":      void this._stop();   break;
+      case "Next":      void this._next();   break;
+      case "Previous":  void this._prev();   break;
+      case "SetVolume": this._volume = cmd.volume; this._audio.volume = cmd.volume; break;
+    }
+  };
+
   override connectedCallback(): void {
     super.connectedCallback();
     this._audio.addEventListener("error", () => {
       const err = this._audio.error;
       this._audioError = err ? `Audio error ${err.code}: ${err.message}` : "Unknown audio error";
     });
+    playerBus.addEventListener("cmd", this._onBusCmd);
     void this._fetchStatus();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    playerBus.removeEventListener("cmd", this._onBusCmd);
     this._stopPolling();
     this._stopAudio();
     this._normalizer.disconnect();
