@@ -21,6 +21,8 @@ def _normalize_track(item: dict) -> dict:
     artist  = ", ".join(a.get("name", "") for a in artists)
     album   = (track.get("album") or {})
     year    = int((album.get("release_date") or "0")[:4] or 0)
+    images  = album.get("images") or []
+    art_url = images[0].get("url", "") if images else ""
     return {
         "id":          track.get("id", ""),
         "uri":         track.get("uri", ""),
@@ -29,6 +31,7 @@ def _normalize_track(item: dict) -> dict:
         "album":       album.get("name", ""),
         "duration_ms": int(track.get("duration_ms") or 0),
         "year":        year,
+        "art_url":     art_url,
     }
 
 

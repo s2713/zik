@@ -7,7 +7,8 @@ import { isGloballyEnabled } from "./global-services.js";
 import { t } from "./i18n/i18n.js";
 import { SUPPORTED_LANGS, getLanguage, setLanguage } from "./i18n/i18n.js";
 import { dispatchPlayerCmd, playerBus, type PlaylistStateEvent, type SelectionStateEvent } from "./player-bus.js";
-import type { QueueItem } from "./queue/queue-item.js";
+import type { QueueItem, QueueItemEx, QueueStateDetail } from "./queue/queue-item.js";
+import { queue } from "./queue/queue-controller.js";
 import { PlayerBase } from "./player-base.js";
 import { LOCK_REQUEST_EVENT } from "./screen-lock.js";
 import { SERVICE_ICONS } from "./service-icons.js";
@@ -262,15 +263,21 @@ export class UserShell extends PlayerBase {
     /* ---- service players ---- */
     .player-off { display: none; }
 
-    /* ---- footer transport bar ---- */
+    /* ---- footer — three equal columns ---- */
     .footer {
       position: fixed; bottom: 0; left: 0; right: 0;
       height: 76px;
       background: #1e293b;
       border-top: 1px solid #334155;
-      display: flex; align-items: center;
-      gap: 0.75rem; padding: 0 1.25rem;
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      align-items: stretch;
       z-index: 100;
+    }
+
+    /* left column: transport + now-playing */
+    .footer-left {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0 0.75rem; min-width: 0;
     }
     .footer-controls { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
     .ctrl-btn {
@@ -290,14 +297,12 @@ export class UserShell extends PlayerBase {
     }
     .ctrl-btn.play-btn:hover { background: rgba(255,255,255,0.24); }
     .footer-track {
-      flex: 1; min-width: 0; padding: 0 0.5rem;
+      flex: 1; min-width: 0; padding: 0 0.25rem;
       display: flex; flex-direction: column; justify-content: center; gap: 3px;
     }
     .track-title { font-size: 0.9rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .track-sub   { font-size: 0.82em; color: #94a3b8; font-weight: 400; }
-    .track-progress-row {
-      display: flex; align-items: center; gap: 0.4rem;
-    }
+    .track-progress-row { display: flex; align-items: center; gap: 0.4rem; }
     .track-bar {
       flex: 1; height: 3px; background: #334155;
       border-radius: 2px; overflow: hidden;
@@ -316,26 +321,87 @@ export class UserShell extends PlayerBase {
       flex-shrink: 0; padding: 0 0.1rem; gap: 2px;
     }
     .footer-stats-bold { font-size: 0.78rem; color: #94a3b8; }
-    .footer-vol {
-      display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0;
+
+    /* middle column: queue mini-panel */
+    .footer-mid {
+      display: flex; align-items: center; justify-content: center;
+      padding: 0 0.6rem; min-width: 0; overflow: hidden;
+      border-left: 1px solid #334155; border-right: 1px solid #334155;
+      cursor: pointer; user-select: none;
     }
-    .mute-btn {
-      width: 36px; height: 36px;
-      border-radius: 50%;
+    .footer-mid:hover { background: rgba(255,255,255,0.04); }
+    .q-next {
+      display: flex; align-items: center; gap: 0.4rem; min-width: 0; overflow: hidden;
+      font-size: 0.8rem; color: #94a3b8; pointer-events: none;
+    }
+    .q-next-arrow { flex-shrink: 0; color: #475569; font-size: 0.75rem; }
+    .q-next-count { flex-shrink: 0; font-size: 0.72rem; color: #64748b;
+                    background: #334155; border-radius: 10px; padding: 0.1em 0.45em; }
+    .q-next-label { flex-shrink: 0; }
+    .q-next-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #f1f5f9; }
+
+    /* queue dropdown — fixed above footer, aligned to middle column */
+    .q-backdrop  { position: fixed; inset: 0; z-index: 150; }
+    .q-dropdown  {
+      position: fixed; bottom: 76px; left: 33.333%; right: 33.333%;
+      background: #1e293b; border: 1px solid #334155; border-bottom: none;
+      max-height: 50vh; display: flex; flex-direction: column;
+      z-index: 151; overflow: hidden;
+    }
+    .q-drop-header {
+      display: flex; align-items: center; gap: 0.4rem;
+      padding: 0.4rem 0.6rem; border-bottom: 1px solid #334155; flex-shrink: 0;
+    }
+    .q-drop-title { font-size: 0.8rem; color: #94a3b8; flex: 1; }
+    .q-drop-clear {
+      padding: 0.2em 0.55em; font-size: 0.78rem; border: none; border-radius: 4px;
+      cursor: pointer; background: #334155; color: #f1f5f9; transition: background 0.12s;
+    }
+    .q-drop-clear:hover:not(:disabled) { background: #ef4444; }
+    .q-drop-clear:disabled { opacity: 0.4; cursor: default; }
+    .q-drop-clear.confirm { background: #dc2626; }
+    .q-drop-clear.confirm:hover { background: #b91c1c; }
+    .q-drop-list { overflow-y: auto; flex: 1; }
+    .q-drop-row {
+      display: grid; grid-template-columns: 1.8em 1fr auto;
+      align-items: center; font-size: 0.82rem;
+      padding: 0.2rem 0.5rem; cursor: pointer; min-height: 30px;
+      border-bottom: 1px solid #0f172a;
+    }
+    .q-drop-row:hover   { background: #334155; }
+    .q-drop-row.playing { background: rgba(96,165,250,0.15); font-weight: 600; }
+    .q-drop-num  { color: #475569; font-size: 0.75rem; text-align: right; padding-right: 0.35rem; }
+    .q-drop-info { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .q-drop-sub  { color: #94a3b8; }
+    .q-drop-dur  { color: #64748b; font-size: 0.75rem; font-variant-numeric: tabular-nums; padding-left: 0.5rem; }
+
+    /* volume button + popup (lives in footer-left, far-left position) */
+    .vol-wrap { flex-shrink: 0; }
+    .vol-btn {
+      width: 36px; height: 36px; border-radius: 50%;
       background: transparent; border: none;
       color: #f8fafc; cursor: pointer; font-size: 1.1rem;
       display: flex; align-items: center; justify-content: center;
       transition: background 0.12s;
     }
-    .mute-btn:hover  { background: rgba(255,255,255,0.1); }
-    .mute-btn.muted  { color: #94a3b8; }
-    .vol-slider {
-      width: 80px; height: 4px;
-      accent-color: #60a5fa;
-      cursor: pointer;
-      opacity: 1; transition: opacity 0.15s;
+    .vol-btn:hover { background: rgba(255,255,255,0.1); }
+    .vol-btn.muted { color: #94a3b8; }
+    /* fixed so no ancestor overflow or stacking-context can clip it */
+    .vol-popup {
+      position: fixed; bottom: 76px; left: 0;
+      background: #1e293b; border: 1px solid #334155; border-radius: 0 8px 0 0;
+      padding: 0.5rem; display: flex; flex-direction: column;
+      align-items: center; gap: 0.3rem; z-index: 200;
     }
-    .vol-slider.muted { opacity: 0.35; }
+    .vol-slider-v {
+      writing-mode: vertical-lr; direction: rtl;
+      height: 100px; width: 24px;
+      accent-color: #60a5fa; cursor: pointer;
+    }
+    .vol-pct { font-size: 0.72rem; color: #64748b; font-variant-numeric: tabular-nums; }
+
+    /* right column: playlist buttons only, fill the column */
+    .footer-right { display: flex; align-items: stretch; }
 
     /* ---- overlay + drawer ---- */
     .overlay {
@@ -442,7 +508,7 @@ export class UserShell extends PlayerBase {
     .btn-danger:disabled { opacity: 0.5; cursor: default; }
 
     /* ---- playlist footer buttons ---- */
-    .pl-btns { display: flex; align-self: stretch; flex-shrink: 0; }
+    .pl-btns { display: flex; flex: 1; align-self: stretch; }
     .pl-btn {
       flex: 1 1 0; min-width: 0;
       display: flex; align-items: center; justify-content: center;
@@ -506,6 +572,15 @@ export class UserShell extends PlayerBase {
   @state() private _selectionItems: QueueItem[] = [];
   @state() private _addBtnDragOver = false;
 
+  // ---- volume popup (footer left column) ----
+  @state() private _volOpen = false;
+
+  // ---- queue mini-panel (footer middle column) ----
+  @state() private _queueOpen         = false;
+  @state() private _queueItems:       QueueItemEx[] = [];
+  @state() private _queueIdx          = -1;
+  @state() private _queueClearConfirm = false;
+
   // ---- volume / mute ----
   @state() private _volume = 80;   // desired level 0–100 (persisted across mute)
   @state() private _muted  = false;
@@ -520,6 +595,12 @@ export class UserShell extends PlayerBase {
 
   private readonly _onSelectionState = (e: Event): void => {
     this._selectionItems = (e as CustomEvent<SelectionStateEvent>).detail.items;
+  };
+
+  private readonly _onQueueState = (e: Event): void => {
+    const d = (e as CustomEvent<QueueStateDetail>).detail;
+    this._queueItems = d.items;
+    this._queueIdx   = d.index;
   };
 
   private readonly _onUserChanged = (e: Event): void => {
@@ -541,6 +622,10 @@ export class UserShell extends PlayerBase {
     window.addEventListener(USER_CHANGED_EVENT, this._onUserChanged);
     playerBus.addEventListener("playlist-state", this._onPlaylistState);
     playerBus.addEventListener("selection-state", this._onSelectionState);
+    queue.addEventListener("queue-state", this._onQueueState);
+    // Initialise from current queue singleton state.
+    this._queueItems = [...queue.items];
+    this._queueIdx   = queue.index;
     void this._initBattery();
     this._pollTimer = setInterval(() => void this._pollPlayer(), 2000);
   }
@@ -550,6 +635,7 @@ export class UserShell extends PlayerBase {
     window.removeEventListener(USER_CHANGED_EVENT, this._onUserChanged);
     playerBus.removeEventListener("playlist-state", this._onPlaylistState);
     playerBus.removeEventListener("selection-state", this._onSelectionState);
+    queue.removeEventListener("queue-state", this._onQueueState);
     if (this._battery) {
       this._battery.removeEventListener("chargingchange", this._onBatteryChange);
       this._battery.removeEventListener("levelchange",    this._onBatteryChange);
@@ -862,6 +948,75 @@ export class UserShell extends PlayerBase {
   }
 
   // ---- render: persistent footer transport bar ----
+  // ---- queue mini-panel helpers ----
+
+  /** Toggle queue dropdown open/closed; resets confirm state on close. */
+  private _toggleQueue(): void {
+    this._queueOpen = !this._queueOpen;
+    if (!this._queueOpen) this._queueClearConfirm = false;
+  }
+
+  /** Close queue dropdown and reset confirm state. */
+  private _closeQueue(): void {
+    this._queueOpen = false;
+    this._queueClearConfirm = false;
+  }
+
+  /** Inline "Next: <title>" label shown in the middle footer column. */
+  private _renderQueueNext(): TemplateResult {
+    const items = this._queueItems;
+    const idx   = this._queueIdx;
+    const arrow = this._queueOpen ? "▼" : "▲";
+    if (items.length === 0) {
+      return html`<span class="q-next">
+        <span class="q-next-arrow">${arrow}</span>
+        <span style="color:#475569">Queue empty</span>
+      </span>`;
+    }
+    const next = idx >= 0 ? items[idx + 1] : items[0];
+    return html`<span class="q-next">
+      <span class="q-next-arrow">${arrow}</span>
+      <span class="q-next-count">${items.length}</span>
+      ${next ? html`<span class="q-next-label">Next:</span>
+                    <span class="q-next-title">${next.title || next.trackId}</span>`
+             : html`<span class="q-next-title">${items.length} track${items.length !== 1 ? "s" : ""}</span>`}
+    </span>`;
+  }
+
+  /** Dropdown panel rendered above the middle footer column. */
+  private _renderQueueDropdown(): TemplateResult {
+    const items = this._queueItems;
+    return html`
+      <div class="q-dropdown" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="q-drop-header">
+          <span class="q-drop-title">${items.length} track${items.length !== 1 ? "s" : ""} in queue</span>
+          ${this._queueClearConfirm ? html`
+            <button class="q-drop-clear confirm"
+                    @click=${() => { queue.clear(); this._closeQueue(); }}>Confirm</button>
+            <button class="q-drop-clear"
+                    @click=${() => { this._queueClearConfirm = false; }}>Cancel</button>
+          ` : html`
+            <button class="q-drop-clear" ?disabled=${items.length === 0}
+                    @click=${() => { this._queueClearConfirm = true; }}>Clear</button>
+          `}
+        </div>
+        <div class="q-drop-list">
+          ${items.map((item, i) => html`
+            <div class="q-drop-row ${i === this._queueIdx ? "playing" : ""}"
+                 @click=${() => { queue.playAt(i); this._closeQueue(); }}>
+              <span class="q-drop-num">${i + 1}</span>
+              <span class="q-drop-info">
+                ${item.title || item.trackId}
+                ${item.artist ? html`<span class="q-drop-sub"> · ${item.artist}</span>` : nothing}
+              </span>
+              <span class="q-drop-dur">${fmtTotalDur(item.duration)}</span>
+            </div>
+          `)}
+        </div>
+      </div>
+    `;
+  }
+
   private _renderFooter(): TemplateResult {
     const ps      = this._playerState;
     // Use live queue status when available — more accurate than 2s backend poll.
@@ -882,88 +1037,112 @@ export class UserShell extends PlayerBase {
     return html`
       <footer class="footer">
 
-        <!-- transport controls -->
-        <div class="footer-controls">
-          <button class="ctrl-btn" @click=${() => this._cmd("prev")} aria-label="Previous">⏮</button>
-          <button class="ctrl-btn play-btn"
-                  @click=${() => this._cmd(playing ? "pause" : "play")}
-                  aria-label=${playing ? "Pause" : "Play"}>
-            ${playing ? "⏸" : "▶"}
-          </button>
-          <button class="ctrl-btn" @click=${() => this._cmd("stop")} aria-label="Stop">⏹</button>
-          <button class="ctrl-btn" @click=${() => this._cmd("next")} aria-label="Next">⏭</button>
-        </div>
+        <!-- left: volume button (far-left) + transport controls + now-playing -->
+        <div class="footer-left">
 
-        <!-- now-playing info + progress bar -->
-        <div class="footer-track">
-          ${title ? html`
-            <div class="track-title">
-              ${title}${artist ? html`<span class="track-sub"> · ${artist}</span>` : nothing}
-            </div>
-            <div class="track-progress-row">
-              <span class="track-time">${fmtTime(pos)}</span>
-              <div class="track-bar">
-                <div class="track-fill" style="width:${pct}%"></div>
+          <!-- volume toggle — far left; popup is fixed above footer-left edge -->
+          <div class="vol-wrap">
+            <button class="vol-btn ${this._muted ? "muted" : ""}"
+                    aria-label="Volume"
+                    @click=${() => { this._volOpen = !this._volOpen; }}>
+              ${muteIcon}
+            </button>
+            ${this._volOpen ? html`
+              <div class="vol-popup">
+                <input type="range" class="vol-slider-v"
+                       min="0" max="100" .value=${String(vol)}
+                       aria-label="Volume"
+                       @input=${(e: Event) => this._setVolume(
+                         Number((e.target as HTMLInputElement).value)
+                       )} />
+                <span class="vol-pct">${vol}%</span>
+                <button class="vol-btn ${this._muted ? "muted" : ""}"
+                        style="width:28px;height:28px;font-size:0.9rem"
+                        aria-label=${this._muted ? "Unmute" : "Mute"}
+                        @click=${() => this._toggleMute()}>
+                  ${muteIcon}
+                </button>
               </div>
-              ${dur > 0 ? html`<span class="track-time">${fmtTime(dur)}</span>` : nothing}
+            ` : nothing}
+          </div>
+
+          <div class="footer-controls">
+            <button class="ctrl-btn" @click=${() => this._cmd("prev")} aria-label="Previous">⏮</button>
+            <button class="ctrl-btn play-btn"
+                    @click=${() => this._cmd(playing ? "pause" : "play")}
+                    aria-label=${playing ? "Pause" : "Play"}>
+              ${playing ? "⏸" : "▶"}
+            </button>
+            <button class="ctrl-btn" @click=${() => this._cmd("stop")} aria-label="Stop">⏹</button>
+            <button class="ctrl-btn" @click=${() => this._cmd("next")} aria-label="Next">⏭</button>
+          </div>
+
+          <div class="footer-track">
+            ${title ? html`
+              <div class="track-title">
+                ${title}${artist ? html`<span class="track-sub"> · ${artist}</span>` : nothing}
+              </div>
+              <div class="track-progress-row">
+                <span class="track-time">${fmtTime(pos)}</span>
+                <div class="track-bar">
+                  <div class="track-fill" style="width:${pct}%"></div>
+                </div>
+                ${dur > 0 ? html`<span class="track-time">${fmtTime(dur)}</span>` : nothing}
+              </div>
+            ` : nothing}
+          </div>
+
+          ${pl && pl.total > 0 ? html`
+            <div class="footer-stats">
+              <span class="footer-stats-bold">
+                ${pl.index >= 0 ? `${pl.index + 1} / ${pl.total}` : `– / ${pl.total}`}
+              </span>
+              <span>${fmtTotalDur(pl.totalDuration)}</span>
             </div>
           ` : nothing}
         </div>
 
-        <!-- playlist stats (files service only) -->
-        ${pl && pl.total > 0 ? html`
-          <div class="footer-stats">
-            <span class="footer-stats-bold">
-              ${pl.index >= 0 ? `${pl.index + 1} / ${pl.total}` : `– / ${pl.total}`}
-            </span>
-            <span>${fmtTotalDur(pl.totalDuration)}</span>
-          </div>
-        ` : nothing}
-
-        <!-- playlist buttons (grouped so both share equal width) -->
-        <div class="pl-btns">
-          <button class="pl-btn pl-btn-add ${this._addBtnDragOver ? "drag-over" : ""}"
-                  title=${t("playlists.add-to")}
-                  @click=${() => { this._playlistPopup = "add"; }}
-                  @dragover=${(e: DragEvent) => {
-                    if (e.dataTransfer?.types.includes("queue-items-json")) {
-                      e.preventDefault(); this._addBtnDragOver = true;
-                    }
-                  }}
-                  @dragleave=${() => { this._addBtnDragOver = false; }}
-                  @drop=${(e: DragEvent) => {
-                    e.preventDefault(); this._addBtnDragOver = false;
-                    const raw = e.dataTransfer?.getData("queue-items-json");
-                    if (raw) {
-                      try { this._selectionItems = JSON.parse(raw) as QueueItem[]; } catch { /* ignore */ }
-                    }
-                    this._playlistPopup = "add";
-                  }}>
-            ♪+ ${t("playlists.add-to")}
-          </button>
-          <button class="pl-btn pl-btn-browse"
-                  title=${t("playlists.browse")}
-                  @click=${() => { this._playlistPopup = "browse"; }}>
-            ♪ ${t("playlists.browse")}
-          </button>
+        <!-- middle: queue panel -->
+        <div class="footer-mid" @click=${() => this._toggleQueue()}>
+          ${this._renderQueueNext()}
         </div>
 
-        <!-- volume + mute -->
-        <div class="footer-vol">
-          <button class="mute-btn ${this._muted ? "muted" : ""}"
-                  aria-label=${this._muted ? "Unmute" : "Mute"}
-                  @click=${() => this._toggleMute()}>
-            ${muteIcon}
-          </button>
-          <input type="range" class="vol-slider ${this._muted ? "muted" : ""}"
-                 min="0" max="100" .value=${String(vol)}
-                 aria-label="Volume"
-                 @input=${(e: Event) => this._setVolume(
-                   Number((e.target as HTMLInputElement).value)
-                 )} />
+        <!-- right: playlist buttons fill the full column -->
+        <div class="footer-right">
+          <div class="pl-btns">
+            <button class="pl-btn pl-btn-add ${this._addBtnDragOver ? "drag-over" : ""}"
+                    title=${t("playlists.add-to")}
+                    @click=${() => { this._playlistPopup = "add"; }}
+                    @dragover=${(e: DragEvent) => {
+                      if (e.dataTransfer?.types.includes("queue-items-json")) {
+                        e.preventDefault(); this._addBtnDragOver = true;
+                      }
+                    }}
+                    @dragleave=${() => { this._addBtnDragOver = false; }}
+                    @drop=${(e: DragEvent) => {
+                      e.preventDefault(); this._addBtnDragOver = false;
+                      const raw = e.dataTransfer?.getData("queue-items-json");
+                      if (raw) {
+                        try { this._selectionItems = JSON.parse(raw) as QueueItem[]; } catch { /* ignore */ }
+                      }
+                      this._playlistPopup = "add";
+                    }}>
+              ♪+ ${t("playlists.add-to")}
+            </button>
+            <button class="pl-btn pl-btn-browse"
+                    title=${t("playlists.browse")}
+                    @click=${() => { this._playlistPopup = "browse"; }}>
+              ♪ ${t("playlists.browse")}
+            </button>
+          </div>
         </div>
 
       </footer>
+
+      ${this._queueOpen ? html`
+        <div class="q-backdrop" @click=${() => this._closeQueue()}></div>
+        ${this._renderQueueDropdown()}
+      ` : nothing}
     `;
   }
 

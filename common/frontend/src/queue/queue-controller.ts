@@ -10,7 +10,7 @@
 
 import { getCsrfHeaders } from "../csrf.js";
 import { VolumeNormalizer } from "../audio/normalizer.js";
-import { playerBus, type PlayerBusCmd, type PlaylistStateEvent } from "../player-bus.js";
+import { playerBus, dispatchPlayerCmd, type PlayerBusCmd, type PlaylistStateEvent } from "../player-bus.js";
 import type { QueueItem, QueueItemEx, QueueItemState, QueueStateDetail } from "./queue-item.js";
 
 type QueueStatus = "playing" | "paused" | "stopped" | "suspended";
@@ -67,6 +67,8 @@ class QueueController extends EventTarget {
     });
     // Handle transport commands from footer bar even when service panels are unmounted.
     playerBus.addEventListener("cmd", (e) => this._onBusCmd(e as CustomEvent<PlayerBusCmd>));
+    // Spotify player signals completion here; queue advances to next item.
+    playerBus.addEventListener("spotify-track-ended", () => this._onSpotifyTrackEnded());
   }
 
   // ---- queue mutations ----
@@ -118,9 +120,18 @@ class QueueController extends EventTarget {
     if (index < 0 || index >= this._items.length) return;
     this._index  = index;
     this._status = "playing";
+    const item = this._items[index];
+    // Spotify tracks: delegate to the Spotify player element via playerBus; audio element
+    // is not used. The player fires "spotify-track-ended" when the track finishes.
+    if (item.serviceId === "spotify") {
+      dispatchPlayerCmd({ type: "PlaySpotifyTrack", uri: item.audioUrl, serviceId: "spotify" });
+      void this._notifyMpris("Play", item);
+      this._emit();
+      this._emitPlaylistState();
+      return;
+    }
     // Signal that the imminent "pause" event (from src reassignment) is expected.
     this._playIntending = true;
-    const item = this._items[index];
     this._audio.src    = item.audioUrl;
     this._audio.volume = this._volume;
     this._audio.play().catch(err => {
@@ -205,8 +216,14 @@ class QueueController extends EventTarget {
 
   pause(): void {
     if (this._status !== "playing") return;
-    this._audio.pause();
+    // Set state FIRST — prevents re-entrant loop when the Pause bus cmd comes back through _onBusCmd.
     this._status = "paused";
+    const cur = this._items[this._index];
+    if (cur?.serviceId === "spotify") {
+      dispatchPlayerCmd({ type: "Pause", serviceId: "spotify" });
+    } else {
+      this._audio.pause();
+    }
     void this._notifyMpris("Pause");
     this._emit();
     this._emitPlaylistState();
@@ -217,6 +234,15 @@ class QueueController extends EventTarget {
     if (this._status !== "paused" && this._status !== "suspended") return;
     if (this._index < 0 || this._index >= this._items.length) return;
     this._status = "playing";
+    const cur = this._items[this._index];
+    if (cur?.serviceId === "spotify") {
+      // Resume (no uri) — Spotify continues from paused position.
+      dispatchPlayerCmd({ type: "Play", serviceId: "spotify" });
+      void this._notifyMpris("Play");
+      this._emit();
+      this._emitPlaylistState();
+      return;
+    }
     this._connectNormalizer();  // also resumes AudioContext if auto-suspended
     this._audio.play().catch(err => {
       if (err instanceof DOMException && err.name === "AbortError") return;
@@ -236,8 +262,14 @@ class QueueController extends EventTarget {
    */
   suspend(): void {
     if (this._status !== "playing" && this._status !== "paused") return;
-    this._audio.pause();
+    // Set state FIRST — prevents re-entrant loop if the Pause bus cmd bounces back.
     this._status = "suspended";
+    const cur = this._items[this._index];
+    if (cur?.serviceId === "spotify") {
+      dispatchPlayerCmd({ type: "Pause", serviceId: "spotify" });
+    } else {
+      this._audio.pause();
+    }
     this._stopTicker();
     this._emit();
     this._emitPlaylistState();
@@ -315,6 +347,14 @@ class QueueController extends EventTarget {
   }
 
   private _onEnded(): void { this._advance(this._index + 1); }
+
+  /** Called when the Spotify player reports the delegated track has finished. */
+  private _onSpotifyTrackEnded(): void {
+    const cur = this._items[this._index];
+    if (cur?.serviceId === "spotify" && this._status === "playing") {
+      this._advance(this._index + 1);
+    }
+  }
 
   /** Skip forward from `from`, skipping already-errored items. */
   private _advance(from: number): void {

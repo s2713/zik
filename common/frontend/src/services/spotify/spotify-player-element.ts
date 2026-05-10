@@ -1,133 +1,226 @@
-import { css, html, nothing } from "lit";
+import { css, html, nothing, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
-import { t } from "../../i18n/i18n.js";
-import { type PlayerBusCmd, playerBus } from "../../player-bus.js";
+import { playerBus, type PlayerBusCmd, type SelectionStateEvent } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
+import { queue } from "../../queue/queue-controller.js";
+import type { QueueItem } from "../../queue/queue-item.js";
+import "../../queue/queue-panel-element.js";
 
-type SortKey = "title" | "artist" | "album" | "year";
-const SORT_KEYS: SortKey[] = ["artist", "album", "title", "year"];
+// ---- types ----
+
+type SortCol = "title" | "artist" | "album" | "year";
 
 interface SpotifyTrack {
-  id: string;
-  uri: string;
-  title: string;
-  artist: string;
-  album: string;
+  id:          string;
+  uri:         string;
+  title:       string;
+  artist:      string;
+  album:       string;
   duration_ms: number;
-  year: number;
+  year:        number;
+  art_url?:    string;
 }
 
 interface SpotifyDevice {
-  id: string;
+  id:   string;
   name: string;
 }
 
+// ---- helper ----
+
+/** Format milliseconds as m:ss. */
+function fmtMs(ms: number): string {
+  if (!ms || !isFinite(ms)) return "--:--";
+  const s = Math.floor(ms / 1000);
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
 /**
- * Spotify service player element.
- * Auth is done via OAuth 2.0 PKCE redirect; playback is controlled via Spotify
- * Web API commands routed through the backend. librespot acts as local device.
+ * Spotify service player — two-panel layout matching Subsonic/Files.
+ * Library is shown in the left search panel; the shared queue panel is on the right.
+ * Playback is delegated to the backend + librespot; queue controller coordinates
+ * cross-service sequencing via the playerBus "PlaySpotifyTrack" / "spotify-track-ended" protocol.
  */
 @customElement("spotify-player")
 export class SpotifyPlayerElement extends PlayerBase {
   static styles = css`
-    :host { display: block; font-family: sans-serif; padding: 1rem; max-width: 700px; }
-    h3 { margin: 0 0 0.5rem; }
+    :host {
+      display: flex; flex-direction: column;
+      height: calc(100vh - 56px - 76px);
+      font-family: sans-serif; color: #f1f5f9; background: #0f172a;
+      overflow: hidden;
+    }
 
-    .conn-strip { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
-                  padding: 0.5rem; background: #f8f8f8; border-radius: 4px;
-                  margin-bottom: 0.4rem; font-size: 0.88em; }
-    .badge { font-size: 0.75em; padding: 0.1em 0.4em; border-radius: 3px; }
-    .badge.on  { background: #d4edda; color: #155724; }
-    .badge.off { background: #f8d7da; color: #721c24; }
+    /* ---- status bar ---- */
+    .status-bar {
+      flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;
+      padding: 0.4rem 1rem; background: #1e293b; border-bottom: 1px solid #334155;
+      font-size: 0.85em;
+    }
+    .badge { font-size: 0.78em; padding: 0.15em 0.5em; border-radius: 3px; }
+    .badge.on  { background: #14532d; color: #86efac; }
+    .badge.off { background: #7f1d1d; color: #fca5a5; }
+    .btn {
+      padding: 0.3em 0.8em; border-radius: 4px; font-size: 0.88em; cursor: pointer;
+      border: 1px solid #475569; background: #334155; color: #f1f5f9;
+    }
+    .btn:hover  { background: #475569; }
+    .btn.primary { background: #1d4ed8; border-color: #3b82f6; }
+    .btn.primary:hover { background: #2563eb; }
 
-    .info-strip { font-size: 0.85em; color: #555; padding: 0.25rem 0.5rem;
-                  background: #f0f8ff; border-radius: 4px; margin-bottom: 0.4rem;
-                  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    /* ---- two-panel layout ---- */
+    .panels { display: grid; grid-template-columns: 1fr 1fr; flex: 1; overflow: hidden; }
+    @media (orientation: portrait) {
+      .panels { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    }
+    queue-panel { display: flex; flex-direction: column; overflow: hidden; }
 
-    .devices-panel { background: #f8f8f8; border: 1px solid #ddd; border-radius: 4px;
-                     padding: 0.5rem; margin-bottom: 0.5rem; }
-    .devices-panel h4 { margin: 0 0 0.4rem; font-size: 0.88em; }
-    .device-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85em;
-                  padding: 0.15rem 0; }
-    .device-row.active { font-weight: bold; }
+    /* ---- search panel (left) ---- */
+    .search-panel {
+      display: flex; flex-direction: column; overflow: hidden;
+      border-right: 1px solid #334155;
+    }
 
-    .toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
-               margin-bottom: 0.5rem; }
-    .toolbar input[type="search"] { font-size: 0.88em; padding: 0.2em 0.4em;
-                                    border: 1px solid #bbb; border-radius: 3px; width: 160px; }
-    .sort-label { font-size: 0.85em; color: #555; }
-    .count { font-size: 0.82em; color: #666; margin: 0 0 0.4rem; }
+    .lib-header { flex-shrink: 0; background: #0f172a; border-bottom: 1px solid #334155; }
+    /* title | artist | album | year | duration | actions */
+    .lib-cols, .lib-search {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 4em 4em 5.5em;
+    }
+    .lib-cols { border-bottom: 1px solid #1e293b; }
+    .col-hd {
+      padding: 0.3rem 0.4rem; font-size: 0.8em; font-weight: 600;
+      color: #94a3b8; text-align: left;
+      display: flex; align-items: center; gap: 0.25em;
+      cursor: pointer; user-select: none;
+    }
+    .col-hd:hover { color: #f1f5f9; }
+    .col-hd.sorted { color: #60a5fa; }
+    .col-hd-dur { cursor: default; }
+    .lib-search { padding: 0.25rem 0; gap: 0 0.25rem; align-items: center; }
+    .lib-search input {
+      font-size: 0.8em; padding: 0.2em 0.35em; margin: 0 0.25rem;
+      border: 1px solid #334155; border-radius: 3px;
+      background: #1e293b; color: #f1f5f9; width: calc(100% - 0.5rem);
+    }
+    .lib-search input::placeholder { color: #475569; }
 
-    table { width: 100%; border-collapse: collapse; font-size: 0.9em; margin-bottom: 1rem; }
-    th { text-align: left; border-bottom: 2px solid #ccc; padding: 0.25rem 0.4rem;
-         cursor: pointer; user-select: none; }
-    th.active { color: #1db954; }
-    td { padding: 0.2rem 0.4rem; border-bottom: 1px solid #eee; }
-    tr.playing td { background: #e8fff0; font-weight: bold; }
-    tr:hover td { background: #f5f5f5; cursor: pointer; }
-    .empty { color: #888; font-size: 0.9em; margin: 1rem 0; }
-    .time { font-size: 0.8em; color: #555; font-variant-numeric: tabular-nums; }
+    .lib-rows { flex: 1; overflow-y: auto; }
+    .lib-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 4em 4em 5.5em;
+      border-bottom: 1px solid #1e293b; font-size: 0.85em;
+    }
+    .lib-row:hover    { background: #1e293b; }
+    .lib-row.selected { background: rgba(96,165,250,0.12); }
+    .lib-row.delegated { background: rgba(29,185,84,0.12); }  /* currently playing via queue */
+    .lib-cell {
+      padding: 0.25rem 0.4rem; overflow: hidden;
+      white-space: nowrap; text-overflow: ellipsis;
+    }
+    .lib-cell.dur { color: #64748b; font-variant-numeric: tabular-nums; font-size: 0.9em; }
+    .empty { padding: 1.5rem 1rem; color: #475569; font-size: 0.9em; }
+    .lib-count { padding: 0.25rem 0.5rem; font-size: 0.75em; color: #475569; }
 
-    .error-strip { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;
-                   border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.85em;
-                   margin-bottom: 0.5rem; }
+    /* action buttons on each library row */
+    .lib-actions { display: flex; gap: 2px; align-items: center; padding: 0 0.2rem; flex-shrink: 0; }
+    .act-btn {
+      font-size: 0.82em; padding: 0.35em 0.55em;
+      background: #334155; border: none; color: #f1f5f9;
+      border-radius: 3px; cursor: pointer; line-height: 1;
+    }
+    .act-btn:hover { background: #475569; }
+    .act-btn.play-now { background: #1d4ed8; }
+    .act-btn.play-now:hover { background: #2563eb; }
 
-    .now-playing { border-top: 2px solid #ccc; padding-top: 0.75rem; }
-    .np-title { font-weight: bold; margin-bottom: 0.2rem; }
-    .np-sub { font-size: 0.85em; color: #555; margin-bottom: 0.4rem; }
-    .seek { width: 100%; margin-bottom: 0.5rem; }
-    .ctrls { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
-    .vol { display: flex; align-items: center; gap: 0.5rem; }
-    .vol input { width: 120px; }
+    /* selection info in count bar */
+    .sel-info { color: #7dd3fc; }
+    .sel-clear {
+      margin-left: 0.3em; font-size: 0.85em;
+      background: none; border: none; color: #94a3b8; cursor: pointer; padding: 0;
+    }
+    .sel-clear:hover { color: #f1f5f9; }
   `;
 
-  @state() private _authed = false;
+  // ---- auth / status state ----
+  @state() private _authed             = false;
   @state() private _librespotAvailable = false;
   @state() private _librespotRunning   = false;
   @state() private _librespotDevice    = "";
   @state() private _librespotError     = "";
-  @state() private _playing     = false;
-  @state() private _progressMs  = 0;
-  @state() private _durationMs  = 0;
-  @state() private _volumePct   = 100;
-  @state() private _deviceId    = "";
-  @state() private _deviceName  = "";
-  @state() private _track: SpotifyTrack | null = null;
-  @state() private _library:   SpotifyTrack[] = [];
-  @state() private _devices:   SpotifyDevice[] = [];
-  @state() private _showDevices  = false;
-  @state() private _commandError = "";
-  @state() private _sort: SortKey = "artist";
-  @state() private _filter = "";
+  @state() private _deviceId           = "";
+  @state() private _devices: SpotifyDevice[] = [];
+
+  // ---- library state ----
+  @state() private _library: SpotifyTrack[] = [];
+  @state() private _sortCol: SortCol = "artist";
+  @state() private _sortDir: 1 | -1  = 1;
+  @state() private _fTitle  = "";
+  @state() private _fArtist = "";
+  @state() private _fAlbum  = "";
+  @state() private _fYear   = "";
+
+  // ---- library selection ----
+  @state() private _selected: Set<string> = new Set();
+  private _anchor: string | null = null;
+
+  // ---- delegation tracking ----
+  /** Spotify URI currently playing via queue delegation; drives the green row highlight. */
+  @state() private _delegatedUri = "";
+  /** True once Spotify confirmed playback of _delegatedUri has actually started. */
+  private _delegatedStarted = false;
 
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
 
+  // ---- bus handler ----
+
   private readonly _onBusCmd = (e: Event): void => {
     const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
-    if (!("serviceId" in cmd) || cmd.serviceId !== "spotify") return;
     switch (cmd.type) {
-      case "Play":      void this._command(this._playing ? "Play" : "Play"); break;
-      case "Pause":     void this._command("Pause");    break;
-      case "Stop":      void this._command("Pause");    break;  // Spotify has no Stop
-      case "Next":      void this._command("Next");     break;
-      case "Previous":  void this._command("Previous"); break;
-      case "SetVolume": void this._command("Volume", { percent: Math.round(cmd.volume * 100) }); break;
+      case "PlaySpotifyTrack":
+        void this._playDelegated(cmd.uri);
+        break;
+      case "Play":
+        if ("serviceId" in cmd && cmd.serviceId === "spotify")
+          void this._command("Play");  // resume without URIs — continue from paused position
+        break;
+      case "Pause":
+      case "Stop":
+        if ("serviceId" in cmd && cmd.serviceId === "spotify")
+          void this._command("Pause");
+        break;
+      case "SetVolume":
+        if ("serviceId" in cmd && cmd.serviceId === "spotify")
+          void this._command("Volume", { percent: Math.round(cmd.volume * 100) });
+        break;
+    }
+  };
+
+  private readonly _onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === "Escape" && this._selected.size > 0) {
+      this._selected = new Set(); this._anchor = null;
+      this._emitSelectionState();
     }
   };
 
   override connectedCallback(): void {
     super.connectedCallback();
     playerBus.addEventListener("cmd", this._onBusCmd);
+    document.addEventListener("keydown", this._onKeyDown);
     void this._fetchStatus();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     playerBus.removeEventListener("cmd", this._onBusCmd);
+    document.removeEventListener("keydown", this._onKeyDown);
     this._stopPolling();
+    playerBus.dispatchEvent(new CustomEvent<SelectionStateEvent>("selection-state", {
+      detail: { items: [], source: "spotify" },
+    }));
   }
 
   // ---- polling ----
@@ -138,42 +231,30 @@ export class SpotifyPlayerElement extends PlayerBase {
   }
 
   private _stopPolling(): void {
-    if (this._pollTimer !== null) {
-      clearInterval(this._pollTimer);
-      this._pollTimer = null;
-    }
+    if (this._pollTimer !== null) { clearInterval(this._pollTimer); this._pollTimer = null; }
   }
 
   private async _fetchStatus(): Promise<void> {
     try {
       const r = await fetch("/api/spotify/status");
       const data = await r.json() as {
-        authed: boolean;
-        librespot_available: boolean;
-        librespot_running: boolean;
-        librespot_device?: string;
-        librespot_error?: string;
-        playing?: boolean;
-        progress_ms?: number;
-        volume_pct?: number;
-        device_id?: string;
-        device_name?: string;
-        track?: SpotifyTrack | null;
+        authed:               boolean;
+        librespot_available:  boolean;
+        librespot_running:    boolean;
+        librespot_device?:    string;
+        librespot_error?:     string;
+        playing?:             boolean;
+        device_id?:           string;
+        track?:               { uri?: string } | null;
       };
-      this._authed              = data.authed;
-      this._librespotAvailable  = data.librespot_available;
-      this._librespotRunning    = data.librespot_running;
-      this._librespotDevice     = data.librespot_device ?? "";
-      this._librespotError      = data.librespot_error  ?? "";
+      this._authed             = data.authed;
+      this._librespotAvailable = data.librespot_available;
+      this._librespotRunning   = data.librespot_running;
+      this._librespotDevice    = data.librespot_device ?? "";
+      this._librespotError     = data.librespot_error  ?? "";
       if (data.authed) {
-        this._playing    = data.playing    ?? false;
-        this._progressMs = data.progress_ms ?? 0;
-        this._volumePct  = data.volume_pct  ?? 100;
-        this._deviceId   = data.device_id   ?? "";
-        this._deviceName = data.device_name  ?? "";
-        this._track      = data.track        ?? null;
-        this._durationMs = data.track?.duration_ms ?? 0;
-        void this._notifyPlayer();
+        this._deviceId = data.device_id ?? "";
+        this._checkDelegatedEnd(data.track?.uri ?? "", data.playing ?? false);
         this._startPolling();
       } else {
         this._stopPolling();
@@ -181,327 +262,305 @@ export class SpotifyPlayerElement extends PlayerBase {
     } catch { /* backend unavailable */ }
   }
 
-  // ---- library + devices ----
+  /**
+   * Delegation end detection: wait until Spotify confirms the URI has started
+   * playing, then watch for it to stop or change — that signals "track ended".
+   */
+  private _checkDelegatedEnd(currentUri: string, playing: boolean): void {
+    if (!this._delegatedUri) return;
+    if (!this._delegatedStarted) {
+      if (playing && currentUri === this._delegatedUri) this._delegatedStarted = true;
+      return;
+    }
+    if (!playing || currentUri !== this._delegatedUri) {
+      playerBus.dispatchEvent(new CustomEvent("spotify-track-ended"));
+      this._delegatedUri     = "";
+      this._delegatedStarted = false;
+    }
+  }
+
+  // ---- library ----
 
   private async _fetchLibrary(): Promise<void> {
     try {
       const r = await fetch("/api/spotify/library");
       if (r.ok) this._library = await r.json() as SpotifyTrack[];
-    } catch (err) {
-      console.error("spotify: library fetch failed", err);
-    }
+    } catch (err) { console.error("spotify: library fetch failed", err); }
   }
+
+  // ---- device resolution ----
 
   private async _fetchDevices(): Promise<void> {
     try {
       const r = await fetch("/api/spotify/devices");
-      if (r.ok) {
-        this._devices     = await r.json() as SpotifyDevice[];
-        this._showDevices = true;
-      }
-    } catch (err) {
-      console.error("spotify: devices fetch failed", err);
-    }
+      if (r.ok) this._devices = await r.json() as SpotifyDevice[];
+    } catch { /* backend unavailable */ }
+  }
+
+  /** Fetch device list and return the librespot device ID (or "" if not found). */
+  private async _resolveLibrespotDeviceId(): Promise<string> {
+    await this._fetchDevices();
+    return this._devices.find(d => d.name === this._librespotDevice)?.id ?? "";
   }
 
   // ---- commands ----
 
   private async _command(type: string, extra: Record<string, unknown> = {}): Promise<void> {
     try {
-      const r = await fetch("/api/spotify/command", {
+      await fetch("/api/spotify/command", {
         method: "POST",
         headers: { "content-type": "application/json", ...getCsrfHeaders() },
         body: JSON.stringify({ type, device_id: this._deviceId, ...extra }),
       });
-      if (!r.ok) {
-        const data = await r.json() as { error?: string };
-        this._commandError = data.error ?? `HTTP ${r.status}`;
-        return;
-      }
-      this._commandError = "";
-      // Refresh status shortly after so UI reflects the change.
       setTimeout(() => { void this._fetchStatus(); }, 300);
-    } catch (err) {
-      this._commandError = (err as Error).message;
+    } catch { /* backend unavailable */ }
+  }
+
+  /** Play a specific URI delegated by the queue controller. */
+  private async _playDelegated(uri: string): Promise<void> {
+    this._delegatedUri     = uri;
+    this._delegatedStarted = false;
+    // Librespot gets a new device ID on each restart — resolve fresh before playing.
+    if (this._librespotRunning) {
+      const id = await this._resolveLibrespotDeviceId();
+      if (id) this._deviceId = id;
     }
+    await this._command("Play", { uris: [uri] });
   }
 
   private async _disconnect(): Promise<void> {
     try {
-      await fetch("/api/spotify/disconnect", {
-        method: "POST",
-        headers: { ...getCsrfHeaders() },
-      });
-      this._authed      = false;
-      this._library     = [];
-      this._devices     = [];
-      this._track       = null;
-      this._playing     = false;
-      this._showDevices = false;
+      await fetch("/api/spotify/disconnect", { method: "POST", headers: { ...getCsrfHeaders() } });
+      this._authed          = false;
+      this._library         = [];
+      this._devices         = [];
+      this._delegatedUri    = "";
+      this._delegatedStarted = false;
       this._stopPolling();
     } catch { /* backend unavailable */ }
   }
 
-  /** Restart librespot using stored tokens (no OAuth needed). */
   private async _restartLibrespot(): Promise<void> {
     try {
-      await fetch("/api/spotify/librespot/restart", {
-        method: "POST",
-        headers: { ...getCsrfHeaders() },
-      });
-      // Status poll picks up the new running state within 2 s.
+      await fetch("/api/spotify/librespot/restart", { method: "POST", headers: { ...getCsrfHeaders() } });
     } catch { /* backend unavailable */ }
   }
 
-  /** Transfer playback to the librespot device (by matching its name). */
-  private async _useLocalDevice(): Promise<void> {
-    // Refresh device list first to get the current librespot device ID.
-    await this._fetchDevices();
-    const dev = this._devices.find((d) => d.name === this._librespotDevice);
-    if (dev) {
-      await this._command("Transfer", { device_id: dev.id, play: true });
-      this._deviceId = dev.id;
-      this._showDevices = false;
-    }
+  // ---- queue helpers ----
+
+  /** audioUrl = Spotify URI — the queue controller never loads this as an HTTP stream. */
+  private _toQueueItem(track: SpotifyTrack): QueueItem {
+    return {
+      serviceId: "spotify",
+      trackId:   track.uri,
+      audioUrl:  track.uri,
+      title:     track.title,
+      artist:    track.artist,
+      album:     track.album,
+      duration:  Math.round(track.duration_ms / 1000),
+      artUrl:    track.art_url ?? "",
+    };
   }
 
-  /** Transfer to an arbitrary device from the devices panel. */
-  private async _transferTo(device: SpotifyDevice): Promise<void> {
-    await this._command("Transfer", { device_id: device.id, play: true });
-    this._deviceId   = device.id;
-    this._deviceName = device.name;
-    this._showDevices = false;
+  private _emitSelectionState(): void {
+    const items: QueueItem[] = this._library
+      .filter(t => this._selected.has(t.uri))
+      .map(t => this._toQueueItem(t));
+    playerBus.dispatchEvent(new CustomEvent<SelectionStateEvent>("selection-state", {
+      detail: { items, source: "spotify" },
+    }));
   }
 
-  /** Play a track; passes the whole filtered list so Spotify queues them. */
-  private async _playTrack(track: SpotifyTrack, playlist: SpotifyTrack[]): Promise<void> {
-    // Spotify API accepts up to ~250 URIs; send all displayed tracks starting at index.
-    const idx  = playlist.findIndex((t) => t.uri === track.uri);
-    const uris = playlist.slice(idx).map((t) => t.uri);
-    // Always resolve the librespot device ID fresh: _deviceId from status comes from
-    // current_playback() which returns empty when nothing is playing, and librespot
-    // gets a new device ID on each restart — so the cached ID can be stale or absent.
-    if (this._librespotRunning) {
-      await this._fetchDevices();
-      const dev = this._devices.find((d) => d.name === this._librespotDevice);
-      if (dev) this._deviceId = dev.id;
-    }
-    await this._command("Play", { uris });
-  }
-
-  private _onSeek(e: Event): void {
-    const ms = parseFloat((e.target as HTMLInputElement).value);
-    void this._command("Seek", { position_ms: Math.round(ms) });
-  }
-
-  private _onVolume(e: Event): void {
-    const pct = parseInt((e.target as HTMLInputElement).value, 10);
-    this._volumePct = pct;
-    void this._command("Volume", { percent: pct });
-  }
-
-  private async _notifyPlayer(): Promise<void> {
-    // Post current playback state to backend for MPRIS bridge.
-    const track = this._track;
-    if (!track) return;
-    try {
-      await fetch("/api/player/command", {
-        method: "POST",
-        headers: { "content-type": "application/json", ...getCsrfHeaders() },
-        body: JSON.stringify({
-          type:     this._playing ? "Play" : "Pause",
-          service:  "spotify",
-          track_id: track.id,
-          title:    track.title,
-          artist:   track.artist,
-          album:    track.album,
-          duration: track.duration_ms / 1000,
-          position: this._progressMs / 1000,
-          volume:   this._volumePct / 100,
-        }),
-      });
-    } catch { /* backend unavailable */ }
-  }
-
-  // ---- display list ----
+  // ---- filter / sort ----
 
   private _buildDisplay(): { tracks: SpotifyTrack[]; matched: number } {
-    const q = this._filter.trim().toLowerCase();
-    const base = q
-      ? this._library.filter((tr) =>
-          tr.title.toLowerCase().includes(q)  ||
-          tr.artist.toLowerCase().includes(q) ||
-          tr.album.toLowerCase().includes(q))
-      : this._library;
-    const matched = base.length;
-    const sorted = [...base].sort((a, b) => {
-      let va: string | number = String(a[this._sort]).toLowerCase();
-      let vb: string | number = String(b[this._sort]).toLowerCase();
-      if (this._sort === "year") { va = a.year; vb = b.year; }
-      return va < vb ? -1 : va > vb ? 1 : 0;
+    const q  = (v: string) => v.trim().toLowerCase();
+    const ft = q(this._fTitle);
+    const fa = q(this._fArtist);
+    const fl = q(this._fAlbum);
+    const fy = q(this._fYear);
+
+    const base = this._library.filter((tr) => {
+      if (ft && !tr.title.toLowerCase().includes(ft))  return false;
+      if (fa && !tr.artist.toLowerCase().includes(fa)) return false;
+      if (fl && !tr.album.toLowerCase().includes(fl))  return false;
+      if (fy && !String(tr.year).includes(fy))         return false;
+      return true;
     });
-    return { tracks: sorted.slice(0, 200), matched };
+
+    const matched = base.length;
+    const col = this._sortCol;
+    const dir = this._sortDir;
+    const sorted = [...base].sort((a, b) => {
+      const va: string | number = col === "year" ? a.year : a[col].toLowerCase();
+      const vb: string | number = col === "year" ? b.year : b[col].toLowerCase();
+      return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+    });
+    return { tracks: sorted.slice(0, 500), matched };
   }
 
-  private _fmt(ms: number): string {
-    if (!ms || !isFinite(ms)) return "--:--";
-    const totalSec = Math.floor(ms / 1000);
-    const m = String(Math.floor(totalSec / 60)).padStart(2, "0");
-    const s = String(totalSec % 60).padStart(2, "0");
-    return `${m}:${s}`;
+  private _setSort(col: SortCol): void {
+    if (this._sortCol === col) this._sortDir = (this._sortDir === 1 ? -1 : 1) as 1 | -1;
+    else { this._sortCol = col; this._sortDir = 1; }
+  }
+
+  // ---- selection / drag ----
+
+  private _onTrackClick(e: MouseEvent, uri: string, orderedUris: string[]): void {
+    if (e.shiftKey && this._anchor !== null) {
+      const ai = orderedUris.indexOf(this._anchor);
+      const ki = orderedUris.indexOf(uri);
+      if (ai >= 0 && ki >= 0) {
+        const lo = Math.min(ai, ki); const hi = Math.max(ai, ki);
+        const s = new Set(this._selected);
+        for (let i = lo; i <= hi; i++) s.add(orderedUris[i]);
+        this._selected = s;
+      }
+    } else if (e.ctrlKey || e.metaKey) {
+      const s = new Set(this._selected);
+      if (s.has(uri)) s.delete(uri); else s.add(uri);
+      this._selected = s;
+      this._anchor = uri;
+    } else {
+      this._selected = new Set([uri]);
+      this._anchor = uri;
+    }
+    this._emitSelectionState();
+  }
+
+  private _onSearchDragStart(e: DragEvent, track: SpotifyTrack): void {
+    const isSel  = this._selected.has(track.uri);
+    const tracks = isSel && this._selected.size > 0
+      ? this._library.filter(t => this._selected.has(t.uri))
+      : [track];
+    e.dataTransfer!.effectAllowed = "copy";
+    e.dataTransfer!.setData("queue-items-json", JSON.stringify(tracks.map(t => this._toQueueItem(t))));
   }
 
   // ---- rendering ----
 
-  override render() {
-    const { tracks, matched } = this._buildDisplay();
-    const currentUri = this._track?.uri ?? "";
-    const isLocalActive = this._deviceName === this._librespotDevice;
-
+  private _renderColHeader(col: SortCol, label: string): TemplateResult {
+    const sorted = this._sortCol === col;
+    const arrow  = sorted ? (this._sortDir === 1 ? " ↑" : " ↓") : "";
     return html`
-      <h3>${t("service.spotify")}</h3>
+      <div class="col-hd ${sorted ? "sorted" : ""}" @click=${() => this._setSort(col)}>
+        ${label}${arrow}
+      </div>
+    `;
+  }
 
-      <!-- auth strip -->
-      <div class="conn-strip">
+  private _renderLibrary(): TemplateResult {
+    if (!this._authed) {
+      return html`<div class="empty">Connect your Spotify account to browse your library.</div>`;
+    }
+    if (this._library.length === 0) {
+      return html`<div class="empty">Library is empty — click ↺ Refresh library.</div>`;
+    }
+    const { tracks, matched } = this._buildDisplay();
+    const allUris = tracks.map(t => t.uri);
+    const selInfo = this._selected.size > 0
+      ? html` · <span class="sel-info">${this._selected.size} selected</span
+          ><button class="sel-clear" @click=${() => { this._selected = new Set(); this._anchor = null; }}>✕</button>`
+      : nothing;
+    return html`
+      ${matched < this._library.length
+        ? html`<div class="lib-count">${matched} / ${this._library.length} tracks${tracks.length < matched ? ` — showing first ${tracks.length}` : ""}${selInfo}</div>`
+        : html`<div class="lib-count">${matched} track${matched !== 1 ? "s" : ""}${selInfo}</div>`}
+      ${tracks.map((tr) => {
+        const isSel     = this._selected.has(tr.uri);
+        const isDel     = tr.uri === this._delegatedUri;
+        const effective = isSel && this._selected.size > 0
+          ? this._library.filter(t => this._selected.has(t.uri))
+          : [tr];
+        return html`
+          <div class="lib-row ${isSel ? "selected" : ""} ${isDel ? "delegated" : ""}"
+               draggable="true"
+               @click=${(e: MouseEvent) => this._onTrackClick(e, tr.uri, allUris)}
+               @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, tr)}>
+            <div class="lib-cell">${tr.title}</div>
+            <div class="lib-cell">${tr.artist}</div>
+            <div class="lib-cell">${tr.album}</div>
+            <div class="lib-cell">${tr.year || ""}</div>
+            <div class="lib-cell dur">${fmtMs(tr.duration_ms)}</div>
+            <div class="lib-actions">
+              <button class="act-btn" title="Append to queue"
+                      @click=${(e: Event) => { e.stopPropagation(); queue.add(effective.map(t => this._toQueueItem(t))); }}>+</button>
+              <button class="act-btn" title="Play after current"
+                      @click=${(e: Event) => { e.stopPropagation(); queue.insertNext(effective.map(t => this._toQueueItem(t))); }}>⏭</button>
+              <button class="act-btn play-now" title="Play now"
+                      @click=${(e: Event) => { e.stopPropagation(); queue.playNow(effective.map(t => this._toQueueItem(t))); }}>▶</button>
+            </div>
+          </div>
+        `;
+      })}
+    `;
+  }
+
+  private _renderStatusBar(): TemplateResult {
+    return html`
+      <div class="status-bar">
         <span class="badge ${this._authed ? "on" : "off"}">
-          ${this._authed ? t("spotify.authed") : t("spotify.not-authed")}
+          ${this._authed ? "Spotify connected" : "Spotify not connected"}
         </span>
         ${this._authed ? html`
-          <button @click=${() => void this._fetchLibrary()}>${t("spotify.refresh-library")}</button>
-          <button @click=${() => void this._fetchDevices()}>${t("spotify.list-devices")}</button>
-          <button @click=${() => void this._disconnect()}>${t("spotify.disconnect")}</button>
+          ${this._librespotAvailable
+            ? (this._librespotRunning
+                ? html`<span class="badge on">librespot: ${this._librespotDevice}</span>`
+                : html`<span class="badge off">librespot stopped</span>
+                       <button class="btn" @click=${() => void this._restartLibrespot()}>Restart</button>`)
+            : nothing}
+          ${this._librespotError
+            ? html`<span style="color:#f87171;font-size:0.82em">${this._librespotError}</span>`
+            : nothing}
+          <button class="btn" @click=${() => void this._fetchLibrary()}>↺ Refresh library</button>
+          <button class="btn" @click=${() => void this._disconnect()}>Disconnect</button>
         ` : html`
-          <button @click=${() => { window.location.href = "/api/spotify/auth/start"; }}>
-            ${t("spotify.connect")}
+          <button class="btn primary"
+                  @click=${() => { window.location.href = "/api/spotify/auth/start"; }}>
+            Connect Spotify
           </button>
         `}
       </div>
+    `;
+  }
 
-      <!-- librespot / active-device info -->
-      ${this._authed ? html`
-        <div class="info-strip">
-          ${this._librespotAvailable ? html`
-            ${this._librespotRunning
-              ? html`<span class="badge on">${t("spotify.playing-on")} ${this._librespotDevice}</span>`
-              : html`
-                <span class="badge off">${t("spotify.librespot-stopped")}</span>
-                <button @click=${() => void this._restartLibrespot()}>
-                  ${t("spotify.restart-librespot")}
-                </button>`}
-          ` : nothing}
-          ${this._deviceName ? html`
-            <span>${t("spotify.active-device")}: <em>${this._deviceName}</em></span>
-          ` : nothing}
-          ${this._librespotRunning && !isLocalActive ? html`
-            <button @click=${() => void this._useLocalDevice()}>${t("spotify.use-this-device")}</button>
-          ` : nothing}
-          ${this._librespotError ? html`
-            <div class="error-strip">${this._librespotError}</div>
-          ` : nothing}
-        </div>
-      ` : nothing}
+  override render() {
+    return html`
+      ${this._renderStatusBar()}
 
-      <!-- device picker -->
-      ${this._showDevices && this._devices.length > 0 ? html`
-        <div class="devices-panel">
-          <h4>${t("spotify.list-devices")}</h4>
-          ${this._devices.map((d) => html`
-            <div class="device-row ${d.id === this._deviceId ? "active" : ""}">
-              <span>${d.name}</span>
-              <button ?disabled=${d.id === this._deviceId}
-                      @click=${() => void this._transferTo(d)}>
-                ${t("spotify.use")}
-              </button>
+      <div class="panels">
+        <!-- left: library search -->
+        <div class="search-panel">
+          <div class="lib-header">
+            <div class="lib-cols">
+              ${this._renderColHeader("title",  "Title")}
+              ${this._renderColHeader("artist", "Artist")}
+              ${this._renderColHeader("album",  "Album")}
+              ${this._renderColHeader("year",   "Year")}
+              <div class="col-hd col-hd-dur">Duration</div>
+              <div></div>
             </div>
-          `)}
-          <button @click=${() => { this._showDevices = false; }}>${t("spotify.cancel")}</button>
-        </div>
-      ` : nothing}
-
-      <!-- library toolbar -->
-      ${this._authed ? html`
-        <div class="toolbar">
-          <input type="search" placeholder=${t("spotify.filter-placeholder")}
-                 .value=${this._filter}
-                 @input=${(e: Event) => { this._filter = (e.target as HTMLInputElement).value; }} />
-          <span class="sort-label">${t("files.sort.artist")}:</span>
-          ${SORT_KEYS.map((k) => html`
-            <button ?disabled=${this._sort === k} @click=${() => { this._sort = k; }}>
-              ${t(`files.sort.${k}`)}
-            </button>
-          `)}
-        </div>
-
-        <!-- track table -->
-        ${this._library.length === 0
-          ? html`<p class="empty">${t("spotify.no-tracks")}</p>`
-          : matched === 0
-            ? html`<p class="empty">${t("spotify.no-match")}</p>`
-            : html`
-              <p class="count">${matched} / ${this._library.length}
-                ${tracks.length < matched ? html` — showing first ${tracks.length}` : nothing}
-              </p>
-              <table>
-                <thead>
-                  <tr>
-                    <th class=${this._sort === "title"  ? "active" : ""} @click=${() => { this._sort = "title"; }}>
-                      ${t("files.sort.title")}</th>
-                    <th class=${this._sort === "artist" ? "active" : ""} @click=${() => { this._sort = "artist"; }}>
-                      ${t("files.sort.artist")}</th>
-                    <th class=${this._sort === "album"  ? "active" : ""} @click=${() => { this._sort = "album"; }}>
-                      ${t("files.sort.album")}</th>
-                    <th class=${this._sort === "year"   ? "active" : ""} @click=${() => { this._sort = "year"; }}>
-                      ${t("files.sort.year")}</th>
-                    <th class="time">—</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${tracks.map((tr) => html`
-                    <tr class=${tr.uri === currentUri && this._playing ? "playing" : ""}
-                        @click=${() => void this._playTrack(tr, tracks)}>
-                      <td>${tr.title}</td>
-                      <td>${tr.artist}</td>
-                      <td>${tr.album}</td>
-                      <td>${tr.year || ""}</td>
-                      <td class="time">${this._fmt(tr.duration_ms)}</td>
-                    </tr>
-                  `)}
-                </tbody>
-              </table>
-            `
-        }
-
-        <!-- command error -->
-        ${this._commandError ? html`
-          <div class="error-strip">${this._commandError}</div>
-        ` : nothing}
-
-        <!-- now-playing panel -->
-        ${this._track ? html`
-          <div class="now-playing">
-            <div class="np-title">${t("files.now-playing")}: ${this._track.title}</div>
-            <div class="np-sub">${this._track.artist} — ${this._track.album}</div>
-            <input class="seek" type="range" min="0" max=${this._durationMs || 1}
-                   .value=${live(this._progressMs)}
-                   @change=${this._onSeek} />
-            <div class="np-sub time">
-              ${this._fmt(this._progressMs)} / ${this._fmt(this._durationMs)}
-            </div>
-            <div class="ctrls">
-              <button @click=${() => void this._command("Previous")}>${t("player.prev")}</button>
-              <button @click=${() => void this._command(this._playing ? "Pause" : "Play")}>
-                ${this._playing ? t("player.pause") : t("player.play")}
-              </button>
-              <button @click=${() => void this._command("Next")}>${t("player.next")}</button>
-            </div>
-            <div class="vol">
-              <span>${t("player.volume")}</span>
-              <input type="range" min="0" max="100"
-                     .value=${live(this._volumePct)} @input=${this._onVolume} />
+            <div class="lib-search">
+              <input placeholder="Title…"  .value=${live(this._fTitle)}
+                     @input=${(e: Event) => { this._fTitle  = (e.target as HTMLInputElement).value; }} />
+              <input placeholder="Artist…" .value=${live(this._fArtist)}
+                     @input=${(e: Event) => { this._fArtist = (e.target as HTMLInputElement).value; }} />
+              <input placeholder="Album…"  .value=${live(this._fAlbum)}
+                     @input=${(e: Event) => { this._fAlbum  = (e.target as HTMLInputElement).value; }} />
+              <input placeholder="Year…"   .value=${live(this._fYear)}
+                     @input=${(e: Event) => { this._fYear   = (e.target as HTMLInputElement).value; }} />
+              <div></div>
+              <div></div>
             </div>
           </div>
-        ` : nothing}
-      ` : nothing}
+          <div class="lib-rows">
+            ${this._renderLibrary()}
+          </div>
+        </div>
+
+        <!-- right: shared queue panel -->
+        <queue-panel></queue-panel>
+      </div>
     `;
   }
 }
