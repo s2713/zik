@@ -185,7 +185,8 @@ export class SubsonicPlayerElement extends PlayerBase {
       grid-template-columns: 1fr 1fr 1fr 4em 1fr 4em 5.5em;
       border-bottom: 1px solid #1e293b; font-size: 0.85em;
     }
-    .lib-row:hover { background: #1e293b; }
+    .lib-row:hover    { background: #1e293b; }
+    .lib-row.selected { background: rgba(96,165,250,0.12); }
     .lib-cell {
       padding: 0.25rem 0.4rem; overflow: hidden;
       white-space: nowrap; text-overflow: ellipsis;
@@ -204,6 +205,14 @@ export class SubsonicPlayerElement extends PlayerBase {
     .act-btn:hover { background: #475569; }
     .act-btn.play-now { background: #1d4ed8; }
     .act-btn.play-now:hover { background: #2563eb; }
+
+    /* selection indicator in count bar */
+    .sel-info { color: #7dd3fc; }
+    .sel-clear {
+      margin-left: 0.3em; font-size: 0.85em;
+      background: none; border: none; color: #94a3b8; cursor: pointer; padding: 0;
+    }
+    .sel-clear:hover { color: #f1f5f9; }
   `;
 
   // ---- sources state ----
@@ -227,16 +236,28 @@ export class SubsonicPlayerElement extends PlayerBase {
   @state() private _fYear   = "";
   @state() private _fGenre  = "";
 
+  // ---- library selection ----
+  @state() private _selected: Set<string> = new Set();
+  private _anchor: string | null = null;
+
+  private readonly _onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === "Escape" && this._selected.size > 0) {
+      this._selected = new Set(); this._anchor = null;
+    }
+  };
+
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
 
   override connectedCallback(): void {
     super.connectedCallback();
+    document.addEventListener("keydown", this._onKeyDown);
     void this._fetchSources();
     void this._fetchStatus();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    document.removeEventListener("keydown", this._onKeyDown);
     this._stopPolling();
   }
 
@@ -490,10 +511,39 @@ export class SubsonicPlayerElement extends PlayerBase {
     return item;
   }
 
-  /** Drag-start: export selected tracks as "queue-items-json" for the queue panel drop zone. */
+  /** Click/ctrl-click/shift-click handler for library rows. */
+  private _onTrackClick(e: MouseEvent, id: string, orderedIds: string[]): void {
+    if (e.shiftKey && this._anchor !== null) {
+      const ai = orderedIds.indexOf(this._anchor);
+      const ki = orderedIds.indexOf(id);
+      if (ai >= 0 && ki >= 0) {
+        const lo = Math.min(ai, ki); const hi = Math.max(ai, ki);
+        const s = new Set(this._selected);
+        for (let i = lo; i <= hi; i++) s.add(orderedIds[i]);
+        this._selected = s;
+      }
+    } else if (e.ctrlKey || e.metaKey) {
+      const s = new Set(this._selected);
+      if (s.has(id)) s.delete(id); else s.add(id);
+      this._selected = s;
+      this._anchor = id;
+    } else {
+      this._selected = new Set([id]);
+      this._anchor = id;
+    }
+  }
+
+  /**
+   * Drag-start: if the dragged row is selected export the whole selection,
+   * otherwise just this track.
+   */
   private _onSearchDragStart(e: DragEvent, track: SubsonicTrack): void {
+    const isSel  = this._selected.has(track.id);
+    const tracks = isSel && this._selected.size > 0
+      ? this._library.filter(t => this._selected.has(t.id))
+      : [track];
     e.dataTransfer!.effectAllowed = "copy";
-    e.dataTransfer!.setData("queue-items-json", JSON.stringify([this._toQueueItem(track)]));
+    e.dataTransfer!.setData("queue-items-json", JSON.stringify(tracks.map(t => this._toQueueItem(t))));
   }
 
   // ---- rendering ----
@@ -612,30 +662,44 @@ export class SubsonicPlayerElement extends PlayerBase {
       return html`<div class="empty">Library is empty — click ↺ Refresh library after connecting.</div>`;
     }
     const { tracks, matched } = this._buildDisplay();
+    const allIds  = tracks.map(t => t.id);   // ordered for shift-click range
+    const selInfo = this._selected.size > 0
+      ? html` · <span class="sel-info">${this._selected.size} selected</span
+        ><button class="sel-clear" title="Clear selection"
+                 @click=${() => { this._selected = new Set(); this._anchor = null; }}>✕</button>`
+      : nothing;
     return html`
       ${matched < this._library.length
-        ? html`<div class="lib-count">${matched} / ${this._library.length} tracks${tracks.length < matched ? ` — showing first ${tracks.length}` : ""}</div>`
-        : html`<div class="lib-count">${matched} track${matched !== 1 ? "s" : ""}</div>`}
-      ${tracks.map((tr) => html`
-        <div class="lib-row"
-             draggable="true"
-             @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, tr)}>
-          <div class="lib-cell">${String(tr.title  ?? "")}</div>
-          <div class="lib-cell">${String(tr.artist ?? "")}</div>
-          <div class="lib-cell">${String(tr.album  ?? "")}</div>
-          <div class="lib-cell">${tr.year ?? ""}</div>
-          <div class="lib-cell">${String(tr.genre  ?? "")}</div>
-          <div class="lib-cell dur">${fmt(tr.duration ?? 0)}</div>
-          <div class="lib-actions">
-            <button class="act-btn" title="Append to queue"
-                    @click=${(e: Event) => { e.stopPropagation(); queue.add([this._toQueueItem(tr)]); }}>+</button>
-            <button class="act-btn" title="Play after current"
-                    @click=${(e: Event) => { e.stopPropagation(); queue.insertNext([this._toQueueItem(tr)]); }}>⏭</button>
-            <button class="act-btn play-now" title="Play now"
-                    @click=${(e: Event) => { e.stopPropagation(); queue.playNow([this._toQueueItem(tr)]); }}>▶</button>
+        ? html`<div class="lib-count">${matched} / ${this._library.length} tracks${tracks.length < matched ? ` — showing first ${tracks.length}` : ""}${selInfo}</div>`
+        : html`<div class="lib-count">${matched} track${matched !== 1 ? "s" : ""}${selInfo}</div>`}
+      ${tracks.map((tr) => {
+        const isSel    = this._selected.has(tr.id);
+        // When the clicked row is selected, act on the full selection; otherwise just this track.
+        const effective = isSel && this._selected.size > 0
+          ? this._library.filter(t => this._selected.has(t.id))
+          : [tr];
+        return html`
+          <div class="lib-row ${isSel ? "selected" : ""}"
+               draggable="true"
+               @click=${(e: MouseEvent) => this._onTrackClick(e, tr.id, allIds)}
+               @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, tr)}>
+            <div class="lib-cell">${String(tr.title  ?? "")}</div>
+            <div class="lib-cell">${String(tr.artist ?? "")}</div>
+            <div class="lib-cell">${String(tr.album  ?? "")}</div>
+            <div class="lib-cell">${tr.year ?? ""}</div>
+            <div class="lib-cell">${String(tr.genre  ?? "")}</div>
+            <div class="lib-cell dur">${fmt(tr.duration ?? 0)}</div>
+            <div class="lib-actions">
+              <button class="act-btn" title="Append to queue"
+                      @click=${(e: Event) => { e.stopPropagation(); queue.add(effective.map(t => this._toQueueItem(t))); }}>+</button>
+              <button class="act-btn" title="Play after current"
+                      @click=${(e: Event) => { e.stopPropagation(); queue.insertNext(effective.map(t => this._toQueueItem(t))); }}>⏭</button>
+              <button class="act-btn play-now" title="Play now"
+                      @click=${(e: Event) => { e.stopPropagation(); queue.playNow(effective.map(t => this._toQueueItem(t))); }}>▶</button>
+            </div>
           </div>
-        </div>
-      `)}
+        `;
+      })}
     `;
   }
 

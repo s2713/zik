@@ -170,7 +170,8 @@ export class FilesPlayerElement extends PlayerBase {
       padding: 0.25rem 0.5rem;
       border-bottom: 1px solid rgba(255,255,255,0.03);
     }
-    .result-row:hover { background: rgba(255,255,255,0.05); }
+    .result-row:hover    { background: rgba(255,255,255,0.05); }
+    .result-row.selected { background: rgba(96,165,250,0.10); }
     .result-row[draggable] { cursor: grab; }
     /* Visual hierarchy via left border; indentation via padding on the first cell only
        so all other columns stay aligned with the header. */
@@ -181,9 +182,20 @@ export class FilesPlayerElement extends PlayerBase {
 
     .expand-icon {
       color: #475569; font-size: 0.75em; user-select: none;
-      display: inline-block; transition: transform 0.15s;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 1.4em; transition: transform 0.15s;
+      background: none; border: none; padding: 0; cursor: pointer;
     }
-    .expand-icon.open { transform: rotate(90deg); }
+    .expand-icon:hover { color: #94a3b8; }
+    .expand-icon.open  { transform: rotate(90deg); }
+
+    /* selection indicator in the column header */
+    .sel-info  { color: #7dd3fc; margin-left: 0.5em; font-weight: normal; }
+    .sel-clear {
+      margin-left: 0.25em; font-size: 0.85em;
+      background: none; border: none; color: #94a3b8; cursor: pointer; padding: 0;
+    }
+    .sel-clear:hover { color: #f1f5f9; }
 
     .row-cell {
       font-size: 0.82em; white-space: nowrap;
@@ -237,17 +249,29 @@ export class FilesPlayerElement extends PlayerBase {
                                  subpath: "", username: "", password: "" };
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // ---- library selection ----
+  @state() private _selected: Set<string> = new Set();
+  private _anchor: string | null = null;
+
+  private readonly _onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === "Escape" && this._selected.size > 0) {
+      this._selected = new Set(); this._anchor = null;
+    }
+  };
+
   // artist-image cache: name → URL | null (null = not found / pending)
   private _artistImages: Record<string, string | null> = {};
 
   override connectedCallback(): void {
     super.connectedCallback();
+    document.addEventListener("keydown", this._onKeyDown);
     void this._fetchSources();
     void this._fetchTracks();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    document.removeEventListener("keydown", this._onKeyDown);
   }
 
   // ---- sources ----
@@ -375,7 +399,9 @@ export class FilesPlayerElement extends PlayerBase {
   // ---- drag-and-drop (search → queue) ----
 
   /** Drag tracks from the search panel; queue panel accepts the drop. */
-  private _onSearchDragStart(e: DragEvent, tracks: FileTrack[]): void {
+  private _onSearchDragStart(e: DragEvent, ownTracks: FileTrack[], key: string): void {
+    const isSel  = this._selected.has(key);
+    const tracks = isSel && this._selected.size > 0 ? this._selectedTracks() : ownTracks;
     e.dataTransfer!.effectAllowed = "copy";
     e.dataTransfer!.setData("queue-items-json", JSON.stringify(tracks.map(fileTrackToQueueItem)));
   }
@@ -456,16 +482,102 @@ export class FilesPlayerElement extends PlayerBase {
       : html`<div class="row-thumb-ph">♪</div>`;
   }
 
-  /** Append / add-after-current / play-now action buttons for a track set. */
-  private _renderActions(tracks: FileTrack[]): TemplateResult {
+  /**
+   * Flat ordered list of all currently visible row keys (mirrors render order).
+   * Used by shift-click to compute the selected range.
+   */
+  private _visibleKeyOrder(): string[] {
+    const keys: string[] = [];
+    const filtered = this._filteredTracks();
+    const mode     = this._displayMode();
+    if (mode === "artists") {
+      for (const [name, aTracks] of this._groupByArtist(filtered)) {
+        keys.push(`a:${name}`);
+        if (this._expandedArtists.has(name)) {
+          for (const [albumKey, alTracks] of this._groupByAlbum(aTracks)) {
+            keys.push(`l:${albumKey}`);
+            if (this._expandedAlbums.has(albumKey)) {
+              for (const tr of this._sortedTracks(alTracks)) keys.push(`t:${tr.id}`);
+            }
+          }
+        }
+      }
+    } else if (mode === "albums") {
+      for (const [albumKey, alTracks] of this._groupByAlbum(filtered)) {
+        keys.push(`l:${albumKey}`);
+        if (this._expandedAlbums.has(albumKey)) {
+          for (const tr of this._sortedTracks(alTracks)) keys.push(`t:${tr.id}`);
+        }
+      }
+    } else {
+      for (const tr of this._sortedTracks(filtered)) keys.push(`t:${tr.id}`);
+    }
+    return keys;
+  }
+
+  /** Collect all FileTrack objects for the current selection (deduped). */
+  private _selectedTracks(): FileTrack[] {
+    const result: FileTrack[] = [];
+    const seen = new Set<string>();
+    for (const key of this._selected) {
+      let matches: FileTrack[];
+      if (key.startsWith("a:")) {
+        const name = key.slice(2);
+        matches = this._tracks.filter(t => t.artist === name);
+      } else if (key.startsWith("l:")) {
+        const raw  = key.slice(2);
+        const sep  = raw.lastIndexOf("||");
+        const album = raw.slice(0, sep); const artist = raw.slice(sep + 2);
+        matches = this._tracks.filter(t => t.album === album && t.artist === artist);
+      } else {
+        const id = key.slice(2);
+        matches = this._tracks.filter(t => t.id === id);
+      }
+      for (const t of matches) {
+        if (!seen.has(t.id)) { result.push(t); seen.add(t.id); }
+      }
+    }
+    return result;
+  }
+
+  /** Handle click / ctrl-click / shift-click for library row selection. */
+  private _onRowClick(e: MouseEvent, key: string): void {
+    if (e.shiftKey && this._anchor !== null) {
+      const order = this._visibleKeyOrder();
+      const ai = order.indexOf(this._anchor);
+      const ki = order.indexOf(key);
+      if (ai >= 0 && ki >= 0) {
+        const lo = Math.min(ai, ki); const hi = Math.max(ai, ki);
+        const s = new Set(this._selected);
+        for (let i = lo; i <= hi; i++) s.add(order[i]);
+        this._selected = s;
+      }
+    } else if (e.ctrlKey || e.metaKey) {
+      const s = new Set(this._selected);
+      if (s.has(key)) s.delete(key); else s.add(key);
+      this._selected = s;
+      this._anchor = key;
+    } else {
+      this._selected = new Set([key]);
+      this._anchor = key;
+    }
+  }
+
+  /**
+   * Append / add-after-current / play-now action buttons.
+   * When the row's key is in the selection, acts on the full selection.
+   */
+  private _renderActions(tracks: FileTrack[], key: string): TemplateResult {
+    const isSel    = this._selected.has(key);
+    const effective = isSel && this._selected.size > 0 ? this._selectedTracks() : tracks;
     return html`
       <div class="row-actions">
         <button class="row-act" title="Append to queue"
-                @click=${(e: Event) => { e.stopPropagation(); queue.add(tracks.map(fileTrackToQueueItem)); }}>+</button>
+                @click=${(e: Event) => { e.stopPropagation(); queue.add(effective.map(fileTrackToQueueItem)); }}>+</button>
         <button class="row-act" title="Play after current"
-                @click=${(e: Event) => { e.stopPropagation(); queue.insertNext(tracks.map(fileTrackToQueueItem)); }}>⏭</button>
+                @click=${(e: Event) => { e.stopPropagation(); queue.insertNext(effective.map(fileTrackToQueueItem)); }}>⏭</button>
         <button class="row-act play-now" title="Play now"
-                @click=${(e: Event) => { e.stopPropagation(); queue.playNow(tracks.map(fileTrackToQueueItem)); }}>▶</button>
+                @click=${(e: Event) => { e.stopPropagation(); queue.playNow(effective.map(fileTrackToQueueItem)); }}>▶</button>
       </div>`;
   }
 
@@ -480,6 +592,11 @@ export class FilesPlayerElement extends PlayerBase {
               }}>
         ${label}${this._sortCol === col ? (this._sortDir === 1 ? " ▲" : " ▼") : ""}
       </button>`;
+    const selInfo = this._selected.size > 0
+      ? html`<span class="sel-info">${this._selected.size} selected</span
+          ><button class="sel-clear" title="Clear selection"
+                   @click=${() => { this._selected = new Set(); this._anchor = null; }}>✕</button>`
+      : nothing;
     return html`
       <div class="result-header">
         <span></span><span></span>
@@ -488,7 +605,7 @@ export class FilesPlayerElement extends PlayerBase {
         ${h("track",  t("files.track"))}
         ${h("year",   t("files.year"))}
         ${h("source", "Source")}
-        <span style="color:#64748b">Action</span>
+        <span style="color:#64748b">${selInfo || html`Action`}</span>
       </div>`;
   }
 
@@ -497,58 +614,73 @@ export class FilesPlayerElement extends PlayerBase {
     const artists = this._groupByArtist(tracks);
     if (artists.length === 0) return html`<div class="empty">No artists found</div>`;
     return html`${artists.map(([name, aTracks]) => {
+      const aKey     = `a:${name}`;
       const expanded = this._expandedArtists.has(name);
       const albums   = this._groupByAlbum(aTracks);
       return html`
-        <div class="result-row" draggable="true"
-             @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, aTracks)}
-             @click=${() => {
-               const s = new Set(this._expandedArtists);
-               if (expanded) s.delete(name); else s.add(name);
-               this._expandedArtists = s;
-             }}>
-          <span class="expand-icon ${expanded ? "open" : ""}">▶</span>
+        <div class="result-row ${this._selected.has(aKey) ? "selected" : ""}"
+             draggable="true"
+             @click=${(e: MouseEvent) => this._onRowClick(e, aKey)}
+             @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, aTracks, aKey)}>
+          <!-- expand icon is a separate button so it doesn't trigger row selection -->
+          <button class="expand-icon ${expanded ? "open" : ""}"
+                  title="${expanded ? "Collapse" : "Expand"}"
+                  @click=${(e: MouseEvent) => {
+                    e.stopPropagation();
+                    const s = new Set(this._expandedArtists);
+                    if (expanded) s.delete(name); else s.add(name);
+                    this._expandedArtists = s;
+                  }}>▶</button>
           ${this._artistImgCell(name)}
           <span class="row-cell strong" title="${name}">${name}</span>
           <span class="row-cell dim">${albums.length} album${albums.length !== 1 ? "s" : ""}</span>
           <span class="row-cell dim">${aTracks.length} track${aTracks.length !== 1 ? "s" : ""}</span>
           <span class="row-cell"></span>
           <span class="row-cell"></span>
-          ${this._renderActions(aTracks)}
+          ${this._renderActions(aTracks, aKey)}
         </div>
         ${expanded ? albums.map(([albumKey, alTracks]) => {
+          const lKey       = `l:${albumKey}`;
           const albExpanded = this._expandedAlbums.has(albumKey);
           const first = alTracks[0];
           return html`
-            <div class="result-row row-album" draggable="true"
-                 @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, alTracks)}
-                 @click=${() => {
-                   const s = new Set(this._expandedAlbums);
-                   if (albExpanded) s.delete(albumKey); else s.add(albumKey);
-                   this._expandedAlbums = s;
-                 }}>
-              <span class="expand-icon ${albExpanded ? "open" : ""}">▶</span>
+            <div class="result-row row-album ${this._selected.has(lKey) ? "selected" : ""}"
+                 draggable="true"
+                 @click=${(e: MouseEvent) => this._onRowClick(e, lKey)}
+                 @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, alTracks, lKey)}>
+              <button class="expand-icon ${albExpanded ? "open" : ""}"
+                      title="${albExpanded ? "Collapse" : "Expand"}"
+                      @click=${(e: MouseEvent) => {
+                        e.stopPropagation();
+                        const s = new Set(this._expandedAlbums);
+                        if (albExpanded) s.delete(albumKey); else s.add(albumKey);
+                        this._expandedAlbums = s;
+                      }}>▶</button>
               ${this._artImgCell(first.id)}
               <span class="row-cell dim">${first.artist}</span>
               <span class="row-cell strong" title="${first.album}">${first.album || "(no album)"}</span>
               <span class="row-cell dim">${alTracks.length} track${alTracks.length !== 1 ? "s" : ""}</span>
               <span class="row-cell dim">${first.year ?? ""}</span>
               <span class="row-cell dim">${this._sourceLabel(first.source_id)}</span>
-              ${this._renderActions(alTracks)}
+              ${this._renderActions(alTracks, lKey)}
             </div>
-            ${albExpanded ? this._sortedTracks(alTracks).map(tr => html`
-              <div class="result-row row-track" draggable="true"
-                   @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, [tr])}>
-                <span></span>
-                ${this._artImgCell(tr.id)}
-                <span class="row-cell dim">${tr.artist}</span>
-                <span class="row-cell dim">${tr.album}</span>
-                <span class="row-cell" title="${tr.title}">${tr.title}</span>
-                <span class="row-cell dim">${tr.year ?? ""}</span>
-                <span class="row-cell dim">${this._sourceLabel(tr.source_id)}</span>
-                ${this._renderActions([tr])}
-              </div>
-            `) : nothing}
+            ${albExpanded ? this._sortedTracks(alTracks).map(tr => {
+              const tKey = `t:${tr.id}`;
+              return html`
+                <div class="result-row row-track ${this._selected.has(tKey) ? "selected" : ""}"
+                     draggable="true"
+                     @click=${(e: MouseEvent) => this._onRowClick(e, tKey)}
+                     @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, [tr], tKey)}>
+                  <span></span>
+                  ${this._artImgCell(tr.id)}
+                  <span class="row-cell dim">${tr.artist}</span>
+                  <span class="row-cell dim">${tr.album}</span>
+                  <span class="row-cell" title="${tr.title}">${tr.title}</span>
+                  <span class="row-cell dim">${tr.year ?? ""}</span>
+                  <span class="row-cell dim">${this._sourceLabel(tr.source_id)}</span>
+                  ${this._renderActions([tr], tKey)}
+                </div>`;
+            }) : nothing}
           `;
         }) : nothing}
       `;
@@ -560,38 +692,47 @@ export class FilesPlayerElement extends PlayerBase {
     const albums = this._groupByAlbum(tracks);
     if (albums.length === 0) return html`<div class="empty">No albums found</div>`;
     return html`${albums.map(([key, alTracks]) => {
+      const lKey     = `l:${key}`;
       const expanded = this._expandedAlbums.has(key);
-      const first = alTracks[0];
+      const first    = alTracks[0];
       return html`
-        <div class="result-row" draggable="true"
-             @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, alTracks)}
-             @click=${() => {
-               const s = new Set(this._expandedAlbums);
-               if (expanded) s.delete(key); else s.add(key);
-               this._expandedAlbums = s;
-             }}>
-          <span class="expand-icon ${expanded ? "open" : ""}">▶</span>
+        <div class="result-row ${this._selected.has(lKey) ? "selected" : ""}"
+             draggable="true"
+             @click=${(e: MouseEvent) => this._onRowClick(e, lKey)}
+             @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, alTracks, lKey)}>
+          <button class="expand-icon ${expanded ? "open" : ""}"
+                  title="${expanded ? "Collapse" : "Expand"}"
+                  @click=${(e: MouseEvent) => {
+                    e.stopPropagation();
+                    const s = new Set(this._expandedAlbums);
+                    if (expanded) s.delete(key); else s.add(key);
+                    this._expandedAlbums = s;
+                  }}>▶</button>
           ${this._artImgCell(first.id)}
           <span class="row-cell" title="${first.artist}">${first.artist}</span>
           <span class="row-cell strong" title="${first.album}">${first.album || "(no album)"}</span>
           <span class="row-cell dim">${alTracks.length} track${alTracks.length !== 1 ? "s" : ""}</span>
           <span class="row-cell dim">${first.year ?? ""}</span>
           <span class="row-cell dim">${this._sourceLabel(first.source_id)}</span>
-          ${this._renderActions(alTracks)}
+          ${this._renderActions(alTracks, lKey)}
         </div>
-        ${expanded ? this._sortedTracks(alTracks).map(tr => html`
-          <div class="result-row row-track" draggable="true"
-               @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, [tr])}>
-            <span></span>
-            ${this._artImgCell(tr.id)}
-            <span class="row-cell dim">${tr.artist}</span>
-            <span class="row-cell dim">${tr.album}</span>
-            <span class="row-cell" title="${tr.title}">${tr.title}</span>
-            <span class="row-cell dim">${tr.year ?? ""}</span>
-            <span class="row-cell dim">${this._sourceLabel(tr.source_id)}</span>
-            ${this._renderActions([tr])}
-          </div>
-        `) : nothing}
+        ${expanded ? this._sortedTracks(alTracks).map(tr => {
+          const tKey = `t:${tr.id}`;
+          return html`
+            <div class="result-row row-track ${this._selected.has(tKey) ? "selected" : ""}"
+                 draggable="true"
+                 @click=${(e: MouseEvent) => this._onRowClick(e, tKey)}
+                 @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, [tr], tKey)}>
+              <span></span>
+              ${this._artImgCell(tr.id)}
+              <span class="row-cell dim">${tr.artist}</span>
+              <span class="row-cell dim">${tr.album}</span>
+              <span class="row-cell" title="${tr.title}">${tr.title}</span>
+              <span class="row-cell dim">${tr.year ?? ""}</span>
+              <span class="row-cell dim">${this._sourceLabel(tr.source_id)}</span>
+              ${this._renderActions([tr], tKey)}
+            </div>`;
+        }) : nothing}
       `;
     })}`;
   }
@@ -600,19 +741,23 @@ export class FilesPlayerElement extends PlayerBase {
   private _renderTrackList(tracks: FileTrack[]): TemplateResult {
     const sorted = this._sortedTracks(tracks);
     if (sorted.length === 0) return html`<div class="empty">No tracks found</div>`;
-    return html`${sorted.map(tr => html`
-      <div class="result-row" draggable="true"
-           @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, [tr])}>
-        <span></span>
-        ${this._artImgCell(tr.id)}
-        <span class="row-cell" title="${tr.artist}">${tr.artist}</span>
-        <span class="row-cell dim" title="${tr.album}">${tr.album}</span>
-        <span class="row-cell strong" title="${tr.title}">${tr.title}</span>
-        <span class="row-cell dim">${tr.year ?? ""}</span>
-        <span class="row-cell dim">${this._sourceLabel(tr.source_id)}</span>
-        ${this._renderActions([tr])}
-      </div>
-    `)}`;
+    return html`${sorted.map(tr => {
+      const tKey = `t:${tr.id}`;
+      return html`
+        <div class="result-row ${this._selected.has(tKey) ? "selected" : ""}"
+             draggable="true"
+             @click=${(e: MouseEvent) => this._onRowClick(e, tKey)}
+             @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, [tr], tKey)}>
+          <span></span>
+          ${this._artImgCell(tr.id)}
+          <span class="row-cell" title="${tr.artist}">${tr.artist}</span>
+          <span class="row-cell dim" title="${tr.album}">${tr.album}</span>
+          <span class="row-cell strong" title="${tr.title}">${tr.title}</span>
+          <span class="row-cell dim">${tr.year ?? ""}</span>
+          <span class="row-cell dim">${this._sourceLabel(tr.source_id)}</span>
+          ${this._renderActions([tr], tKey)}
+        </div>`;
+    })}`;
   }
 
   private _renderSearchPanel(): TemplateResult {

@@ -206,11 +206,18 @@ export class QueuePanelElement extends PlayerBase {
   // ---- rendering ----
 
   private _renderArt(item: QueueItemEx): TemplateResult {
-    if (item.artUrl) {
-      return html`<img class="q-art" src=${item.artUrl} alt=""
-        @error=${(e: Event) => { (e.target as HTMLImageElement).style.display = "none"; }} />`;
-    }
-    return html`<div class="q-art-ph">♪</div>`;
+    /* Always render a wrapper div so the grid cell is never removed from flow.
+       Hiding the <img> on error (display:none) is safe here because the wrapper
+       stays in place; without the wrapper, hiding the img would shift all cells left. */
+    return html`
+      <div style="position:relative;width:32px;height:32px;overflow:hidden;flex-shrink:0;">
+        <div class="q-art-ph">♪</div>
+        ${item.artUrl ? html`<img
+          style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"
+          src=${item.artUrl} alt=""
+          @error=${(e: Event) => { (e.target as HTMLImageElement).style.display = "none"; }} />`
+        : nothing}
+      </div>`;
   }
 
   private _renderErrIcon(item: QueueItemEx): TemplateResult {
