@@ -165,6 +165,8 @@
   "radio.no-results":            { "en": "No stations found.",            "fr": "Aucune station trouvée." },
   "radio.no-favorites":          { "en": "No favorites yet. Click ★ on a station to save it.", "fr": "Aucun favori. Cliquez sur ★ pour en ajouter." },
   "radio.no-somafm":             { "en": "Could not load SomaFM channels.", "fr": "Impossible de charger les chaînes SomaFM." },
+  "radio.filter-placeholder":    { "en": "Filter…",                         "fr": "Filtrer…" },
+  "radio.select-station":        { "en": "Select a station to play.",        "fr": "Sélectionnez une station." },
 
   "admin.login":                 { "en": "Admin",                               "fr": "Admin" },
   "admin.enter-password":        { "en": "Admin password",                      "fr": "Mot de passe admin" },

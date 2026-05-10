@@ -1067,14 +1067,18 @@ export class UserShell extends PlayerBase {
           </div>
 
           <div class="footer-controls">
-            <button class="ctrl-btn" @click=${() => this._cmd("prev")} aria-label="Previous">⏮</button>
+            <button class="ctrl-btn"
+                    ?disabled=${this._playingId === "radio"}
+                    @click=${() => this._cmd("prev")} aria-label="Previous">⏮</button>
             <button class="ctrl-btn play-btn"
                     @click=${() => this._cmd(playing ? "pause" : "play")}
                     aria-label=${playing ? "Pause" : "Play"}>
               ${playing ? "⏸" : "▶"}
             </button>
             <button class="ctrl-btn" @click=${() => this._cmd("stop")} aria-label="Stop">⏹</button>
-            <button class="ctrl-btn" @click=${() => this._cmd("next")} aria-label="Next">⏭</button>
+            <button class="ctrl-btn"
+                    ?disabled=${this._playingId === "radio"}
+                    @click=${() => this._cmd("next")} aria-label="Next">⏭</button>
           </div>
 
           <div class="footer-track">

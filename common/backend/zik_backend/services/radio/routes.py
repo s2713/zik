@@ -5,16 +5,21 @@ Two sources:
 - SomaFM: ~30 hand-curated commercial-free channels
 
 Station favorites are persisted in the settings DB.
-Audio is streamed directly by the browser from the station URL.
+ICY streams are proxied through the backend (/api/radio/stream) so the browser
+can receive audio without ICY metadata interleaving.  StreamTitle is extracted
+and exposed via /api/radio/metadata for the frontend to poll.
+HLS streams (.m3u8) are detected via /api/radio/probe and played directly by
+hls.js in the browser.
 """
 
 import asyncio
 import json
 import logging
+import re
 
 import httpx
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
 from ..files.db import LibraryDB
@@ -27,6 +32,69 @@ _FAV_KEY      = "radio.favorites"
 _TIMEOUT      = 15.0
 _UA           = "zik-radio/1.0"
 _QUALITY_RANK = {"highest": 3, "high": 2, "low": 1}  # "low">"highest" alphabetically — use int rank
+
+# ---- ICY metadata state -------------------------------------------------------
+
+# Maps encoded stream URL → latest StreamTitle extracted from ICY blocks.
+# Single-user assumption: one active stream at a time.
+_icy_metadata: dict[str, str] = {}
+
+
+class IcyParser:
+    """Stateful parser that strips ICY metadata blocks from an audio byte stream.
+
+    ICY interleaves audio data with metadata every `metaint` bytes.
+    After each block of `metaint` audio bytes, there is:
+      - 1 byte: metadata length / 16  (0 = no metadata follows)
+      - length * 16 bytes: null-padded UTF-8 text, e.g. StreamTitle='...';
+    """
+
+    _TITLE_RE = re.compile(r"StreamTitle='([^;']*)'")
+
+    def __init__(self, metaint: int) -> None:
+        self._metaint    = metaint
+        self._buf        = bytearray()
+        self._audio_left = metaint   # audio bytes before next meta header byte
+        self._meta_left  = 0         # metadata bytes still expected
+        self._meta_buf   = bytearray()
+
+    def feed(self, data: bytes) -> tuple[bytes, str | None]:
+        """Consume raw ICY data; return (audio_only_bytes, StreamTitle_or_None)."""
+        self._buf += data
+        audio = bytearray()
+        title: str | None = None
+
+        while self._buf:
+            if self._meta_left > 0:
+                # Accumulate metadata payload bytes.
+                take = min(self._meta_left, len(self._buf))
+                self._meta_buf += self._buf[:take]
+                del self._buf[:take]
+                self._meta_left -= take
+                if self._meta_left == 0:
+                    # Null-terminate, decode, extract StreamTitle.
+                    raw  = bytes(self._meta_buf).split(b"\x00", 1)[0]
+                    text = raw.decode("utf-8", errors="replace")
+                    m = self._TITLE_RE.search(text)
+                    if m:
+                        title = m.group(1)
+                    self._meta_buf.clear()
+            elif self._audio_left > 0:
+                # Pass through audio bytes.
+                take = min(self._audio_left, len(self._buf))
+                audio += self._buf[:take]
+                del self._buf[:take]
+                self._audio_left -= take
+            else:
+                # Next byte is the metadata-length prefix.
+                meta_len = self._buf[0] * 16
+                del self._buf[:1]
+                self._audio_left = self._metaint
+                if meta_len:
+                    self._meta_left = meta_len
+                    self._meta_buf.clear()
+
+        return bytes(audio), title
 
 
 async def _fetch_pls_url(client: httpx.AsyncClient, pls_url: str) -> str:
@@ -226,6 +294,77 @@ def make_radio_router(db: LibraryDB) -> list:
         await _save_favorites(db, favs)
         return JSONResponse({"ok": True})
 
+    async def probe(request: Request) -> JSONResponse:
+        """HEAD the stream URL and classify it as 'icy', 'hls', or 'plain'.
+
+        Clients call this before playing so they know whether to use the ICY
+        proxy, hls.js, or a direct <audio> src.
+        """
+        url = request.query_params.get("url", "").strip()
+        if not url:
+            return JSONResponse({"error": "url required"}, status_code=400)
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as c:
+                r = await c.head(url, headers={"User-Agent": _UA, "Icy-MetaData": "1"},
+                                 follow_redirects=True)
+            ct = r.headers.get("content-type", "").lower()
+            if "mpegurl" in ct or url.split("?")[0].endswith(".m3u8"):
+                return JSONResponse({"format": "hls"})
+            if r.headers.get("icy-metaint"):
+                return JSONResponse({"format": "icy",
+                                     "metaint": int(r.headers["icy-metaint"])})
+            return JSONResponse({"format": "plain"})
+        except Exception as exc:
+            logger.debug("probe failed for %s: %s", url, exc)
+            return JSONResponse({"format": "plain", "error": str(exc)})
+
+    async def stream(request: Request) -> StreamingResponse:
+        """Proxy an ICY stream, stripping metadata blocks and caching StreamTitle.
+
+        The frontend sets <audio>.src to this endpoint so the browser receives
+        clean audio without interleaved ICY chunks.  StreamTitle is available
+        via /api/radio/metadata.
+        """
+        url = request.query_params.get("url", "").strip()
+        if not url:
+            return JSONResponse({"error": "url required"}, status_code=400)  # type: ignore[return-value]
+
+        async def generate():  # noqa: ANN202
+            async with (
+                httpx.AsyncClient(timeout=None) as c,
+                c.stream(
+                    "GET", url,
+                    headers={"User-Agent": _UA, "Icy-MetaData": "1"},
+                    follow_redirects=True,
+                ) as r,
+            ):
+                metaint = int(r.headers.get("icy-metaint", "0") or "0")
+                parser  = IcyParser(metaint) if metaint else None
+                async for chunk in r.aiter_bytes(8192):
+                    if parser:
+                        audio, title = parser.feed(chunk)
+                        if title is not None:
+                            _icy_metadata[url] = title
+                        if audio:
+                            yield audio
+                    else:
+                        yield chunk
+
+        return StreamingResponse(
+            generate(),
+            media_type="audio/mpeg",
+            headers={
+                "Cache-Control":              "no-store",
+                "X-Content-Type-Options":     "nosniff",
+                "Access-Control-Allow-Origin": "*",
+            },
+        )
+
+    async def metadata(request: Request) -> JSONResponse:
+        """Return the latest ICY StreamTitle for a proxied stream URL."""
+        url = request.query_params.get("url", "").strip()
+        return JSONResponse({"title": _icy_metadata.get(url, "")})
+
     return [
         Route("/api/radio/search",           search),
         Route("/api/radio/popular",          popular),
@@ -235,4 +374,7 @@ def make_radio_router(db: LibraryDB) -> list:
         Route("/api/radio/favorites",        list_favorites),
         Route("/api/radio/favorites",        add_favorite,    methods=["POST"]),
         Route("/api/radio/favorites/remove", remove_favorite, methods=["POST"]),
+        Route("/api/radio/probe",            probe),
+        Route("/api/radio/stream",           stream),
+        Route("/api/radio/metadata",         metadata),
     ]
