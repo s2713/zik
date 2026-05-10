@@ -1,9 +1,11 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 
+import { playerBus, type SelectionStateEvent } from "../player-bus.js";
 import { PlayerBase } from "../player-base.js";
 import { queue } from "./queue-controller.js";
 import type { QueueItem, QueueItemEx, QueueStateDetail } from "./queue-item.js";
+import { getPlaylist, entryToQueueItem } from "../services/playlists/playlist-api.js";
 
 /** Format seconds as m:ss or h:mm:ss. */
 function fmtDuration(s: number): string {
@@ -143,9 +145,22 @@ export class QueuePanelElement extends PlayerBase {
     super.disconnectedCallback();
     queue.removeEventListener("queue-state", this._onQueueState);
     document.removeEventListener("keydown", this._onKeyDown);
+    playerBus.dispatchEvent(new CustomEvent<SelectionStateEvent>("selection-state", {
+      detail: { items: [], source: "queue" },
+    }));
   }
 
   // ---- selection ----
+
+  /** Broadcast current queue selection to the footer via playerBus. */
+  private _emitSelectionState(): void {
+    const items: QueueItem[] = [...this._selected]
+      .filter(i => i >= 0 && i < this._items.length)
+      .map(i => this._items[i]);
+    playerBus.dispatchEvent(new CustomEvent<SelectionStateEvent>("selection-state", {
+      detail: { items, source: "queue" },
+    }));
+  }
 
   private _onRowClick(e: MouseEvent, i: number): void {
     if (e.shiftKey && this._anchor >= 0) {
@@ -163,12 +178,14 @@ export class QueuePanelElement extends PlayerBase {
       this._selected = new Set([i]);
       this._anchor   = i;
     }
+    this._emitSelectionState();
   }
 
   private _removeSelected(): void {
     queue.remove(this._selected);
     this._selected = new Set();
     this._anchor   = -1;
+    this._emitSelectionState();
   }
 
   // ---- drag-and-drop ----
@@ -181,14 +198,15 @@ export class QueuePanelElement extends PlayerBase {
 
   private _onDragOver(e: DragEvent, i: number): void {
     const types = e.dataTransfer?.types ?? [];
-    if (types.includes("queue-indices") || types.includes("queue-items-json")) {
+    if (types.includes("queue-indices") || types.includes("queue-items-json") || types.includes("zik/playlist-ids")) {
       e.preventDefault();
       if (this._dropIndex !== i) this._dropIndex = i;
     }
   }
 
-  private _onDrop(e: DragEvent, i: number): void {
+  private async _onDrop(e: DragEvent, i: number): Promise<void> {
     e.preventDefault();
+    this._dropIndex = null;
     const types = e.dataTransfer?.types ?? [];
     if (types.includes("queue-indices")) {
       const indices: number[] = JSON.parse(e.dataTransfer!.getData("queue-indices"));
@@ -197,8 +215,18 @@ export class QueuePanelElement extends PlayerBase {
       // insertAt() preserves playback — no clear/add/playAt needed.
       const items = JSON.parse(e.dataTransfer!.getData("queue-items-json")) as QueueItem[];
       queue.insertAt(items, i);
+    } else if (types.includes("zik/playlist-ids")) {
+      // Fetch all playlist tracks and insert them at the drop position.
+      const ids: string[] = JSON.parse(e.dataTransfer!.getData("zik/playlist-ids"));
+      const all: QueueItem[] = [];
+      for (const id of ids) {
+        try {
+          const detail = await getPlaylist(id);
+          all.push(...detail.tracks.map(entryToQueueItem));
+        } catch { /* skip failed loads */ }
+      }
+      if (all.length > 0) queue.insertAt(all, i);
     }
-    this._dropIndex = null;
   }
 
   private _onDragLeave(): void { this._dropIndex = null; }
@@ -287,7 +315,7 @@ export class QueuePanelElement extends PlayerBase {
       <!-- track list -->
       <div class="q-list"
            @dragover=${(e: DragEvent) => this._onDragOver(e, pl.length)}
-           @drop=${(e: DragEvent) => this._onDrop(e, pl.length)}
+           @drop=${(e: DragEvent) => void this._onDrop(e, pl.length)}
            @dragleave=${() => this._onDragLeave()}>
         ${pl.length === 0
           ? html`<div class="empty">Queue is empty — add tracks from the library using + / ⏭ / ▶</div>`
@@ -304,7 +332,7 @@ export class QueuePanelElement extends PlayerBase {
                      @dblclick=${(e: MouseEvent) => { e.stopPropagation(); queue.playAt(i); }}
                      @dragstart=${(e: DragEvent) => this._onRowDragStart(e, i)}
                      @dragover=${(e: DragEvent) => { e.stopPropagation(); this._onDragOver(e, i); }}
-                     @drop=${(e: DragEvent) => { e.stopPropagation(); this._onDrop(e, i); }}
+                     @drop=${(e: DragEvent) => { e.stopPropagation(); void this._onDrop(e, i); }}
                      @dragleave=${(e: DragEvent) => { e.stopPropagation(); this._onDragLeave(); }}>
                   <span class="q-num">${i + 1}</span>
                   ${this._renderArt(item)}

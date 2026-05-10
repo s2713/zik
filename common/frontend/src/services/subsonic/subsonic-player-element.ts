@@ -3,6 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
+import { playerBus, type SelectionStateEvent } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
 import { queue } from "../../queue/queue-controller.js";
 import type { QueueItem } from "../../queue/queue-item.js";
@@ -240,9 +241,20 @@ export class SubsonicPlayerElement extends PlayerBase {
   @state() private _selected: Set<string> = new Set();
   private _anchor: string | null = null;
 
+  /** Broadcast current selection to the footer via playerBus. */
+  private _emitSelectionState(): void {
+    const items: QueueItem[] = this._library
+      .filter(t => this._selected.has(t.id))
+      .map(t => this._toQueueItem(t));
+    playerBus.dispatchEvent(new CustomEvent<SelectionStateEvent>("selection-state", {
+      detail: { items, source: "subsonic" },
+    }));
+  }
+
   private readonly _onKeyDown = (e: KeyboardEvent): void => {
     if (e.key === "Escape" && this._selected.size > 0) {
       this._selected = new Set(); this._anchor = null;
+      this._emitSelectionState();
     }
   };
 
@@ -259,6 +271,10 @@ export class SubsonicPlayerElement extends PlayerBase {
     super.disconnectedCallback();
     document.removeEventListener("keydown", this._onKeyDown);
     this._stopPolling();
+    // Clear selection state when panel is hidden.
+    playerBus.dispatchEvent(new CustomEvent<SelectionStateEvent>("selection-state", {
+      detail: { items: [], source: "subsonic" },
+    }));
   }
 
   // ---- sources ----
@@ -531,6 +547,7 @@ export class SubsonicPlayerElement extends PlayerBase {
       this._selected = new Set([id]);
       this._anchor = id;
     }
+    this._emitSelectionState();
   }
 
   /**

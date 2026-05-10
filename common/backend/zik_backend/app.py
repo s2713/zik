@@ -29,6 +29,7 @@ from .services.files.routes import make_files_router
 from .services.files.sources import Source, SourceManager
 from .services.mpd.client import MpdProxy
 from .services.mpd.routes import make_mpd_router
+from .services.playlists.routes import make_playlists_router
 from .services.podcasts.routes import make_podcasts_router
 from .services.quota.routes import make_quota_router
 from .services.radio.routes import make_radio_router
@@ -281,6 +282,7 @@ def make_app(
                 spotify_api, spotify_librespot, library_db,
                 _spotify_client_id, _redirect_uri, _frontend_url,
             ),
+            *make_playlists_router(library_db, _sessions),
             *make_podcasts_router(library_db, _offline_dir),
             *make_quota_router(library_db, _offline_dir),
             *make_radio_router(library_db),

@@ -14,7 +14,7 @@ from starlette.routing import Route
 # Must match frontend REAUTH_TTL_MS (60 000 ms).
 _REAUTH_TTL = 60
 
-_ALL_SERVICES = ["demo", "files", "mpd", "subsonic", "spotify", "podcasts", "radio"]
+_ALL_SERVICES = ["demo", "files", "mpd", "subsonic", "spotify", "podcasts", "radio", "playlists"]
 
 
 @dataclass

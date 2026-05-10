@@ -12,5 +12,6 @@ export const SERVICES: ServiceDef[] = [
   { tag: "subsonic-player", id: "subsonic", i18nKey: "service.subsonic" },
   { tag: "spotify-player",  id: "spotify",  i18nKey: "service.spotify"  },
   { tag: "podcasts-player", id: "podcasts", i18nKey: "service.podcasts" },
-  { tag: "radio-player",    id: "radio",    i18nKey: "service.radio"    },
+  { tag: "radio-player",      id: "radio",      i18nKey: "service.radio"      },
+  { tag: "playlists-player",  id: "playlists",  i18nKey: "service.playlists"  },
 ];

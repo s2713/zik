@@ -3,6 +3,8 @@
  * Footer dispatches; each player filters by serviceId and calls its own methods.
  */
 
+import type { QueueItem } from "./queue/queue-item.js";
+
 export type PlayerBusCmd =
   | { type: "Play" | "Pause" | "Stop" | "Next" | "Previous"; serviceId: string | null }
   | { type: "SetVolume"; volume: number; serviceId: string | null }  // volume: 0.0–1.0
@@ -14,6 +16,17 @@ export const playerBus = new EventTarget();
 /** Dispatch a command to whichever service player matches serviceId. */
 export function dispatchPlayerCmd(cmd: PlayerBusCmd): void {
   playerBus.dispatchEvent(new CustomEvent<PlayerBusCmd>("cmd", { detail: cmd }));
+}
+
+/**
+ * Dispatched on playerBus (event name "selection-state") whenever the active panel's
+ * selection changes.  The footer reads it to know what to add to a playlist.
+ */
+export interface SelectionStateEvent {
+  /** Resolved QueueItem list for the current UI selection (empty = no selection). */
+  items:  QueueItem[];
+  /** Which panel owns the selection: "files" | "subsonic" | "queue" | "playlists" | "". */
+  source: string;
 }
 
 /**

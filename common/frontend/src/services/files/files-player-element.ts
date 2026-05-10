@@ -4,6 +4,7 @@ import { customElement, state } from "lit/decorators.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
+import { playerBus, type SelectionStateEvent } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
 import { queue } from "../../queue/queue-controller.js";
 import type { QueueItem } from "../../queue/queue-item.js";
@@ -253,9 +254,18 @@ export class FilesPlayerElement extends PlayerBase {
   @state() private _selected: Set<string> = new Set();
   private _anchor: string | null = null;
 
+  /** Broadcast current selection to the footer via playerBus. */
+  private _emitSelectionState(): void {
+    const items: QueueItem[] = this._selectedTracks().map(fileTrackToQueueItem);
+    playerBus.dispatchEvent(new CustomEvent<SelectionStateEvent>("selection-state", {
+      detail: { items, source: "files" },
+    }));
+  }
+
   private readonly _onKeyDown = (e: KeyboardEvent): void => {
     if (e.key === "Escape" && this._selected.size > 0) {
       this._selected = new Set(); this._anchor = null;
+      this._emitSelectionState();
     }
   };
 
@@ -272,6 +282,10 @@ export class FilesPlayerElement extends PlayerBase {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     document.removeEventListener("keydown", this._onKeyDown);
+    // Clear selection state when panel is hidden.
+    playerBus.dispatchEvent(new CustomEvent<SelectionStateEvent>("selection-state", {
+      detail: { items: [], source: "files" },
+    }));
   }
 
   // ---- sources ----
@@ -561,6 +575,7 @@ export class FilesPlayerElement extends PlayerBase {
       this._selected = new Set([key]);
       this._anchor = key;
     }
+    this._emitSelectionState();
   }
 
   /**

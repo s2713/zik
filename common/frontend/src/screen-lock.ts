@@ -162,7 +162,15 @@ export class ScreenLockElement extends PlayerBase {
     document.addEventListener("keydown",    this._onKeydown);
     window.addEventListener(LOCK_REQUEST_EVENT, this._onLockRequest);
     void this._checkDeviceLock();
-    this._resetIdleTimer();
+    // Force login screen if no user has been selected yet (fresh session = "guest").
+    if (currentUser() === "guest") {
+      this._lockState = "locked";
+      this._updateClock();
+      this._clockInterval = setInterval(() => this._updateClock(), 1000);
+      void listUsers().then((u) => { this._users = u; });
+    } else {
+      this._resetIdleTimer();
+    }
   }
 
   private async _checkDeviceLock(): Promise<void> {
@@ -259,11 +267,17 @@ export class ScreenLockElement extends PlayerBase {
   private async _selectUser(name: string): Promise<void> {
     const prev = currentUser();
     try {
-      const r = await fetch("/api/session/login", {
+      const attempt = async () => fetch("/api/session/login", {
         method: "POST",
         headers: { "content-type": "application/json", ...getCsrfHeaders() },
         body: JSON.stringify({ username: name }),
       });
+      let r = await attempt();
+      // 401 = stale session (backend restarted); refresh CSRF/session and retry once.
+      if (r.status === 401) {
+        await ensureCsrfToken();
+        r = await attempt();
+      }
       // 403 with device-locked means admin re-locked while this screen was open.
       if (!r.ok) {
         const d = await r.json() as { error?: string };

@@ -6,7 +6,8 @@ import { getCsrfHeaders } from "./csrf.js";
 import { isGloballyEnabled } from "./global-services.js";
 import { t } from "./i18n/i18n.js";
 import { SUPPORTED_LANGS, getLanguage, setLanguage } from "./i18n/i18n.js";
-import { dispatchPlayerCmd, playerBus, type PlaylistStateEvent } from "./player-bus.js";
+import { dispatchPlayerCmd, playerBus, type PlaylistStateEvent, type SelectionStateEvent } from "./player-bus.js";
+import type { QueueItem } from "./queue/queue-item.js";
 import { PlayerBase } from "./player-base.js";
 import { LOCK_REQUEST_EVENT } from "./screen-lock.js";
 import { SERVICE_ICONS } from "./service-icons.js";
@@ -15,6 +16,8 @@ import {
   USER_CHANGED_EVENT, allowedServices, canBluetooth, canWifi,
   currentUser,
 } from "./session.js";
+import "./services/playlists/playlist-popup-element.js";
+import "./services/playlists/playlists-player-element.js";
 
 /** Dispatched on window when service visibility changes, so external listeners can react. */
 export const SERVICES_CHANGED_EVENT = "zik-services-changed";
@@ -58,7 +61,13 @@ function _shareKey():   string { return `zik-demo.${currentUser()}.share-with-ad
 function _loadVisible(): Set<string> {
   try {
     const raw = localStorage.getItem(_visibleKey());
-    if (raw) return new Set(JSON.parse(raw) as string[]);
+    if (raw) {
+      // Merge stored set with current SERVICES so new services default to visible.
+      const stored = new Set(JSON.parse(raw) as string[]);
+      const allTags = SERVICES.map((s) => s.tag);
+      for (const tag of allTags) stored.add(tag);
+      return stored;
+    }
   } catch { /* ignore */ }
   return new Set(SERVICES.map((s) => s.tag));
 }
@@ -432,6 +441,21 @@ export class UserShell extends PlayerBase {
     .btn-danger:hover    { background: #b91c1c; }
     .btn-danger:disabled { opacity: 0.5; cursor: default; }
 
+    /* ---- playlist footer buttons ---- */
+    .pl-btns { display: flex; align-self: stretch; flex-shrink: 0; }
+    .pl-btn {
+      flex: 1 1 0; min-width: 0;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0 0.9em; border-radius: 0; font-size: 0.8rem;
+      border: none; cursor: pointer; white-space: nowrap;
+      transition: background 0.12s;
+    }
+    .pl-btn-add  { background: #0f766e; color: #f0fdfa; }
+    .pl-btn-add:hover  { background: #0d9488; }
+    .pl-btn-add.drag-over { background: #0d9488; outline: 2px solid #5eead4; }
+    .pl-btn-browse { background: #334155; color: #f1f5f9; }
+    .pl-btn-browse:hover { background: #475569; }
+
     /* ---- toast ---- */
     .toast {
       position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
@@ -477,6 +501,11 @@ export class UserShell extends PlayerBase {
   // ---- live playlist state pushed by the active service player ----
   @state() private _playlistState: PlaylistStateEvent | null = null;
 
+  // ---- playlist popup ----
+  @state() private _playlistPopup: "add" | "browse" | null = null;
+  @state() private _selectionItems: QueueItem[] = [];
+  @state() private _addBtnDragOver = false;
+
   // ---- volume / mute ----
   @state() private _volume = 80;   // desired level 0–100 (persisted across mute)
   @state() private _muted  = false;
@@ -487,6 +516,10 @@ export class UserShell extends PlayerBase {
 
   private readonly _onPlaylistState = (e: Event): void => {
     this._playlistState = (e as CustomEvent<PlaylistStateEvent>).detail;
+  };
+
+  private readonly _onSelectionState = (e: Event): void => {
+    this._selectionItems = (e as CustomEvent<SelectionStateEvent>).detail.items;
   };
 
   private readonly _onUserChanged = (e: Event): void => {
@@ -507,6 +540,7 @@ export class UserShell extends PlayerBase {
     super.connectedCallback();
     window.addEventListener(USER_CHANGED_EVENT, this._onUserChanged);
     playerBus.addEventListener("playlist-state", this._onPlaylistState);
+    playerBus.addEventListener("selection-state", this._onSelectionState);
     void this._initBattery();
     this._pollTimer = setInterval(() => void this._pollPlayer(), 2000);
   }
@@ -515,6 +549,7 @@ export class UserShell extends PlayerBase {
     super.disconnectedCallback();
     window.removeEventListener(USER_CHANGED_EVENT, this._onUserChanged);
     playerBus.removeEventListener("playlist-state", this._onPlaylistState);
+    playerBus.removeEventListener("selection-state", this._onSelectionState);
     if (this._battery) {
       this._battery.removeEventListener("chargingchange", this._onBatteryChange);
       this._battery.removeEventListener("levelchange",    this._onBatteryChange);
@@ -821,6 +856,7 @@ export class UserShell extends PlayerBase {
         <div class="${this._playerClass("spotify")}"><spotify-player></spotify-player></div>
         <div class="${this._playerClass("podcasts")}"><podcasts-player></podcasts-player></div>
         <div class="${this._playerClass("radio")}"><radio-player></radio-player></div>
+        <div class="${this._playerClass("playlists")}"><playlists-player></playlists-player></div>
       </div>
     `;
   }
@@ -883,6 +919,34 @@ export class UserShell extends PlayerBase {
             <span>${fmtTotalDur(pl.totalDuration)}</span>
           </div>
         ` : nothing}
+
+        <!-- playlist buttons (grouped so both share equal width) -->
+        <div class="pl-btns">
+          <button class="pl-btn pl-btn-add ${this._addBtnDragOver ? "drag-over" : ""}"
+                  title=${t("playlists.add-to")}
+                  @click=${() => { this._playlistPopup = "add"; }}
+                  @dragover=${(e: DragEvent) => {
+                    if (e.dataTransfer?.types.includes("queue-items-json")) {
+                      e.preventDefault(); this._addBtnDragOver = true;
+                    }
+                  }}
+                  @dragleave=${() => { this._addBtnDragOver = false; }}
+                  @drop=${(e: DragEvent) => {
+                    e.preventDefault(); this._addBtnDragOver = false;
+                    const raw = e.dataTransfer?.getData("queue-items-json");
+                    if (raw) {
+                      try { this._selectionItems = JSON.parse(raw) as QueueItem[]; } catch { /* ignore */ }
+                    }
+                    this._playlistPopup = "add";
+                  }}>
+            ♪+ ${t("playlists.add-to")}
+          </button>
+          <button class="pl-btn pl-btn-browse"
+                  title=${t("playlists.browse")}
+                  @click=${() => { this._playlistPopup = "browse"; }}>
+            ♪ ${t("playlists.browse")}
+          </button>
+        </div>
 
         <!-- volume + mute -->
         <div class="footer-vol">
@@ -1028,6 +1092,13 @@ export class UserShell extends PlayerBase {
       ${this._connBtOpen   ? this._renderBt()        : nothing}
       ${this._powerConfirm ? this._renderPowerDialog() : nothing}
       ${this._powerToast   ? html`<div class="toast">${this._powerToast}</div>` : nothing}
+      ${this._playlistPopup !== null ? html`
+        <playlist-popup
+          .mode=${this._playlistPopup}
+          .items=${this._playlistPopup === "add" ? this._selectionItems : []}
+          @close=${() => { this._playlistPopup = null; }}
+          @open-service=${() => { this._playlistPopup = null; this._openService("playlists"); }}>
+        </playlist-popup>` : nothing}
     `;
   }
 }

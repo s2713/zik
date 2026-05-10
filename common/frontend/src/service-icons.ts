@@ -93,4 +93,17 @@ export const SERVICE_ICONS: Record<string, ServiceIcon> = {
       <path d="M76,26 Q94,50 76,74"  stroke="white" stroke-width="6" fill="none" stroke-linecap="round" opacity="0.55"/>
     </svg>`,
   },
+
+  playlists: {
+    color: "#0f766e",
+    svg: html`<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <!-- three playlist lines -->
+      <line x1="14" y1="28" x2="66" y2="28" stroke="white" stroke-width="8" stroke-linecap="round" opacity="0.90"/>
+      <line x1="14" y1="50" x2="66" y2="50" stroke="white" stroke-width="8" stroke-linecap="round" opacity="0.90"/>
+      <line x1="14" y1="72" x2="66" y2="72" stroke="white" stroke-width="8" stroke-linecap="round" opacity="0.90"/>
+      <!-- play arrow to the right -->
+      <polygon points="76,35 76,65 96,50" fill="white" opacity="0.95"/>
+    </svg>`,
+  },
+
 };

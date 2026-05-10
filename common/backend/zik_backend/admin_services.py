@@ -11,7 +11,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-_ALL_SERVICES = ["demo", "files", "mpd", "subsonic", "spotify", "podcasts", "radio"]
+_ALL_SERVICES = ["demo", "files", "mpd", "subsonic", "spotify", "podcasts", "radio", "playlists"]
 
 # Credential fields exposed per service in the admin UI.
 # Services not in this map have no system-shared credentials.

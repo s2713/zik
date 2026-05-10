@@ -307,5 +307,21 @@
   "admin.backup.err-no-file":         { "en": "Please select a backup file.",         "fr": "Veuillez sélectionner un fichier de sauvegarde." },
   "admin.backup.err-parse":           { "en": "Invalid backup file.",                 "fr": "Fichier de sauvegarde invalide." },
   "admin.backup.err-decrypt":         { "en": "Wrong passphrase or corrupted file.",  "fr": "Phrase secrète incorrecte ou fichier corrompu." },
-  "admin.backup.err-restore":         { "en": "Restore failed.",                      "fr": "Échec de la restauration." }
+  "admin.backup.err-restore":         { "en": "Restore failed.",                      "fr": "Échec de la restauration." },
+
+  "service.playlists":                { "en": "Playlists",                            "fr": "Listes de lecture" },
+  "playlists.add-to":                 { "en": "Add to playlist",                      "fr": "Ajouter à une liste" },
+  "playlists.browse":                 { "en": "Playlists",                            "fr": "Listes de lecture" },
+  "playlists.new":                    { "en": "New playlist",                         "fr": "Nouvelle liste" },
+  "playlists.empty":                  { "en": "No playlists yet.",                    "fr": "Aucune liste de lecture." },
+  "playlists.no-selection":           { "en": "Select or drag tracks first.",         "fr": "Sélectionnez ou faites glisser des pistes d'abord." },
+  "playlists.play-all":               { "en": "Play all",                             "fr": "Tout lire" },
+  "playlists.add-all":                { "en": "Add all to queue",                     "fr": "Tout ajouter à la file" },
+  "playlists.import":                 { "en": "Import",                               "fr": "Importer" },
+  "playlists.export":                 { "en": "Export",                               "fr": "Exporter" },
+  "playlists.rename":                 { "en": "Rename",                               "fr": "Renommer" },
+  "playlists.delete":                 { "en": "Delete playlist",                      "fr": "Supprimer la liste" },
+  "playlists.added":                  { "en": "Added to",                             "fr": "Ajouté à" },
+  "playlists.no-tracks":              { "en": "This playlist is empty.",              "fr": "Cette liste est vide." },
+  "playlists.err-load":               { "en": "Could not load playlists.",            "fr": "Impossible de charger les listes." }
 }
