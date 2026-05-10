@@ -92,11 +92,16 @@ def make_mpd_router(proxy: MpdProxy, db: LibraryDB) -> list:
         sources = await _load_sources(db)
         for s in sources:
             if s["id"] == sid:
-                if "label"      in body: s["label"]      = str(body["label"]).strip() or s["label"]
-                if "host"       in body: s["host"]        = str(body["host"]).strip()
-                if "port"       in body: s["port"]        = int(body["port"])
-                if "password"   in body: s["password"]    = str(body["password"])
-                if "stream_url" in body: s["stream_url"]  = str(body["stream_url"]).strip()
+                if "label" in body:
+                    s["label"] = str(body["label"]).strip() or s["label"]
+                if "host" in body:
+                    s["host"] = str(body["host"]).strip()
+                if "port" in body:
+                    s["port"] = int(body["port"])
+                if "password" in body:
+                    s["password"] = str(body["password"])
+                if "stream_url" in body:
+                    s["stream_url"] = str(body["stream_url"]).strip()
                 await _save_sources(db, sources)
                 return JSONResponse(s)
         return JSONResponse({"error": "not found"}, status_code=404)
