@@ -3,10 +3,10 @@ import { customElement, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
-import { t } from "../../i18n/i18n.js";
-import { VolumeNormalizer } from "../../audio/normalizer.js";
-import { type PlayerBusCmd, playerBus } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
+import { queue } from "../../queue/queue-controller.js";
+import type { QueueItem } from "../../queue/queue-item.js";
+import "../../queue/queue-panel-element.js";
 
 // ---- types ----
 
@@ -142,17 +142,24 @@ export class SubsonicPlayerElement extends PlayerBase {
     .badge.on  { background: #14532d; color: #86efac; }
     .badge.off { background: #7f1d1d; color: #fca5a5; }
 
-    /* ---- library area ---- */
-    .library { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-
-    .lib-header {
-      flex-shrink: 0; background: #0f172a;
-      border-bottom: 1px solid #334155;
+    /* ---- two-panel layout ---- */
+    .panels {
+      display: grid; grid-template-columns: 1fr 1fr;
+      flex: 1; overflow: hidden;
     }
+    @media (orientation: portrait) {
+      .panels { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    }
+    queue-panel { display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ---- search panel (left) ---- */
+    .search-panel { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #334155; }
+
+    .lib-header { flex-shrink: 0; background: #0f172a; border-bottom: 1px solid #334155; }
     .lib-cols, .lib-search {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr 4em 1fr 4em;
-      /* title | artist | album | year | genre | duration */
+      /* title | artist | album | year | genre | duration | actions */
+      grid-template-columns: 1fr 1fr 1fr 4em 1fr 4em 5.5em;
     }
     .lib-cols { border-bottom: 1px solid #1e293b; }
     .col-hd {
@@ -175,11 +182,10 @@ export class SubsonicPlayerElement extends PlayerBase {
     .lib-rows { flex: 1; overflow-y: auto; }
     .lib-row {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr 4em 1fr 4em;
-      border-bottom: 1px solid #1e293b; font-size: 0.85em; cursor: pointer;
+      grid-template-columns: 1fr 1fr 1fr 4em 1fr 4em 5.5em;
+      border-bottom: 1px solid #1e293b; font-size: 0.85em;
     }
     .lib-row:hover { background: #1e293b; }
-    .lib-row.playing { background: rgba(96,165,250,0.18); font-weight: 600; }
     .lib-cell {
       padding: 0.25rem 0.4rem; overflow: hidden;
       white-space: nowrap; text-overflow: ellipsis;
@@ -188,24 +194,16 @@ export class SubsonicPlayerElement extends PlayerBase {
     .empty { padding: 1.5rem 1rem; color: #475569; font-size: 0.9em; }
     .lib-count { padding: 0.25rem 0.5rem; font-size: 0.75em; color: #475569; }
 
-    /* audio error */
-    .audio-error {
-      flex-shrink: 0; padding: 0.35rem 0.75rem; font-size: 0.83em;
-      background: #7f1d1d; color: #fca5a5; border-top: 1px solid #dc2626;
+    /* action buttons on each library row */
+    .lib-actions { display: flex; gap: 2px; align-items: center; padding: 0 0.2rem; flex-shrink: 0; }
+    .act-btn {
+      font-size: 0.82em; padding: 0.35em 0.55em;
+      background: #334155; border: none; color: #f1f5f9;
+      border-radius: 3px; cursor: pointer; line-height: 1;
     }
-
-    /* now-playing panel */
-    .now-playing {
-      flex-shrink: 0; padding: 0.5rem 1rem; background: #1e293b;
-      border-top: 1px solid #334155;
-    }
-    .np-title { font-weight: 600; font-size: 0.92em; }
-    .np-sub   { font-size: 0.8em; color: #94a3b8; margin-bottom: 0.3rem; }
-    .np-time  { font-size: 0.78em; color: #64748b; font-variant-numeric: tabular-nums; margin-bottom: 0.3rem; }
-    .seek  { width: 100%; accent-color: #3b82f6; margin-bottom: 0.2rem; }
-    .ctrls { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.35rem; }
-    .vol   { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85em; }
-    .vol input { width: 110px; accent-color: #3b82f6; }
+    .act-btn:hover { background: #475569; }
+    .act-btn.play-now { background: #1d4ed8; }
+    .act-btn.play-now:hover { background: #2563eb; }
   `;
 
   // ---- sources state ----
@@ -215,19 +213,10 @@ export class SubsonicPlayerElement extends PlayerBase {
   @state() private _editingId: string | null = null;
   @state() private _form: SourceForm = { ...EMPTY_FORM };
 
-  // ---- auth + playback state ----
+  // ---- auth + library state ----
   @state() private _connected  = false;
   @state() private _auth: AuthInfo = { server: "", user: "", token: "", salt: "" };
-  @state() private _library:      SubsonicTrack[] = [];
-  @state() private _playlist:     SubsonicTrack[] = [];
-  @state() private _currentIndex  = -1;
-  @state() private _playing       = false;
-  @state() private _elapsed       = 0;
-  @state() private _duration      = 0;
-  @state() private _volume        = 1.0;
-  @state() private _audioError    = "";
-  @state() private _normalizeOn      = false;
-  @state() private _normalizeBlocked = false;
+  @state() private _library: SubsonicTrack[] = [];
 
   // ---- library filter/sort state ----
   @state() private _sortCol: SortCol = "artist";
@@ -238,49 +227,17 @@ export class SubsonicPlayerElement extends PlayerBase {
   @state() private _fYear   = "";
   @state() private _fGenre  = "";
 
-  private readonly _audio      = new Audio();
-  private readonly _normalizer = new VolumeNormalizer();
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
-
-  private readonly _onBusCmd = (e: Event): void => {
-    const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
-    if (cmd.serviceId !== "subsonic") return;
-    switch (cmd.type) {
-      case "Play":      void this._audio.play();   break;
-      case "Pause":     this._pause();             break;
-      case "Stop":      this._stop();              break;
-      case "Next":      void this._playNext();     break;
-      case "Previous":  this._playPrev();          break;
-      case "SetVolume": this._volume = cmd.volume; this._audio.volume = cmd.volume; break;
-    }
-  };
 
   override connectedCallback(): void {
     super.connectedCallback();
-    playerBus.addEventListener("cmd", this._onBusCmd);
-    this._audio.addEventListener("timeupdate", () => {
-      this._elapsed  = this._audio.currentTime;
-      this._duration = isFinite(this._audio.duration) ? this._audio.duration : 0;
-    });
-    this._audio.addEventListener("play",  () => { this._playing = true;  void this._notifyPlayer("Play");  });
-    this._audio.addEventListener("pause", () => { this._playing = false; void this._notifyPlayer("Pause"); });
-    this._audio.addEventListener("ended", () => { void this._playNext(); });
-    this._audio.addEventListener("error", () => {
-      const err = this._audio.error;
-      this._audioError = err ? `Audio error ${err.code}: ${err.message}` : "Unknown audio error";
-      this._playing = false;
-    });
     void this._fetchSources();
     void this._fetchStatus();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
-    playerBus.removeEventListener("cmd", this._onBusCmd);
     this._stopPolling();
-    this._audio.pause();
-    this._audio.src = "";
-    this._normalizer.disconnect();
   }
 
   // ---- sources ----
@@ -382,14 +339,10 @@ export class SubsonicPlayerElement extends PlayerBase {
   private async _disconnect(): Promise<void> {
     try {
       await fetch("/api/subsonic/disconnect", { method: "POST", headers: { ...getCsrfHeaders() } });
-      this._connected    = false;
-      this._auth         = { server: "", user: "", token: "", salt: "" };
-      this._library      = [];
-      this._playlist     = [];
-      this._currentIndex = -1;
+      this._connected = false;
+      this._auth      = { server: "", user: "", token: "", salt: "" };
+      this._library   = [];
       this._stopPolling();
-      this._audio.pause();
-      this._audio.src = "";
       await this._fetchSources();
     } catch { /* backend unavailable */ }
   }
@@ -438,25 +391,6 @@ export class SubsonicPlayerElement extends PlayerBase {
         this._stopPolling();
       }
     } catch { /* backend unavailable */ }
-  }
-
-  // ---- normalizer ----
-
-  private _connectNormalizer(): void {
-    if (!VolumeNormalizer.isSameOrigin(this._audio.src)) {
-      this._normalizeBlocked = true; this._normalizer.disable(); return;
-    }
-    if (this._normalizer.blocked) { this._normalizeBlocked = true; return; }
-    const ok = this._normalizer.connect(this._audio);
-    this._normalizeBlocked = !ok;
-    if (ok && this._normalizeOn) this._normalizer.enable();
-  }
-
-  private _toggleNormalize(): void {
-    if (this._normalizeBlocked) return;
-    this._normalizeOn = !this._normalizeOn;
-    if (this._normalizeOn) { this._connectNormalizer(); this._normalizer.enable(); }
-    else { this._normalizer.disable(); }
   }
 
   // ---- library ----
@@ -520,77 +454,46 @@ export class SubsonicPlayerElement extends PlayerBase {
     else { this._sortCol = col; this._sortDir = 1; }
   }
 
-  // ---- stream URL ----
+  // ---- queue helpers ----
 
-  /** Build a Subsonic stream URL from auth; password never leaves the backend. */
+  /** Build a Subsonic stream URL using token auth; credentials never leave the backend. */
   private _streamUrl(songId: string): string {
     const p = new URLSearchParams({
       id: songId, u: this._auth.user,
-      t:  this._auth.token, s: this._auth.salt,
+      t: this._auth.token, s: this._auth.salt,
       v: "1.16.1", c: "zik",
     });
     return `${this._auth.server}/rest/stream?${p.toString()}`;
   }
 
-  // ---- playback ----
-
-  private _playAt(index: number): void {
-    if (index < 0 || index >= this._playlist.length) return;
-    this._currentIndex = index;
-    this._audioError   = "";
-    const track = this._playlist[index];
-    this._audio.src    = this._streamUrl(track.id);
-    this._audio.volume = this._volume;
-    void this._audio.play();
+  /** Cover art URL for a song/album ID via the Subsonic getCoverArt endpoint. */
+  private _coverUrl(id: string): string {
+    const p = new URLSearchParams({
+      id, u: this._auth.user, t: this._auth.token, s: this._auth.salt,
+      v: "1.16.1", c: "zik",
+    });
+    return `${this._auth.server}/rest/getCoverArt?${p.toString()}`;
   }
 
-  private _playTrack(track: SubsonicTrack, playlist: SubsonicTrack[]): void {
-    this._playlist = playlist;
-    this._playAt(playlist.findIndex((t) => t.id === track.id));
+  /** Convert a SubsonicTrack to a cross-service QueueItem. */
+  private _toQueueItem(track: SubsonicTrack): QueueItem {
+    const item: QueueItem = {
+      serviceId: "subsonic",
+      trackId:   track.id,
+      audioUrl:  this._streamUrl(track.id),
+      title:     track.title  ?? track.id,
+      artist:    track.artist ?? "",
+      album:     track.album  ?? "",
+      duration:  track.duration ?? 0,
+    };
+    if (this._connected) item.artUrl = this._coverUrl(track.id);
+    return item;
   }
 
-  private _pause():  void { this._audio.pause(); }
-  private _resume(): void { void this._audio.play(); }
-  private _stop():   void { this._audio.pause(); this._audio.currentTime = 0; }
-
-  private async _playNext(): Promise<void> { this._playAt(this._currentIndex + 1); }
-
-  private _playPrev(): void {
-    // If more than 3 s into the track, restart it; otherwise go back.
-    if (this._audio.currentTime > 3) this._audio.currentTime = 0;
-    else this._playAt(this._currentIndex - 1);
-  }
-
-  private _onSeek(e: Event): void {
-    // Subsonic serves real files — seeking works natively in HTMLAudioElement.
-    this._audio.currentTime = parseFloat((e.target as HTMLInputElement).value);
-  }
-
-  private _onVolume(e: Event): void {
-    this._volume       = parseInt((e.target as HTMLInputElement).value, 10) / 100;
-    this._audio.volume = this._volume;
-  }
-
-  private async _notifyPlayer(type: string): Promise<void> {
-    const track = this._playlist[this._currentIndex];
-    if (!track) return;
-    try {
-      await fetch("/api/player/command", {
-        method: "POST",
-        headers: { "content-type": "application/json", ...getCsrfHeaders() },
-        body: JSON.stringify({
-          type,
-          service:  "subsonic",
-          track_id: track.id,
-          title:    track.title  ?? "",
-          artist:   track.artist ?? "",
-          album:    track.album  ?? "",
-          duration: track.duration ?? 0,
-          position: this._audio.currentTime,
-          volume:   this._volume,
-        }),
-      });
-    } catch { /* backend unavailable */ }
+  /** Drag-start: export selected tracks as "queue-items-json" for the queue panel drop zone. */
+  private _onSearchDragStart(e: DragEvent, track: SubsonicTrack): void {
+    e.dataTransfer!.effectAllowed = "copy";
+    e.dataTransfer!.setData("queue-items-json", JSON.stringify([this._toQueueItem(track)]));
   }
 
   // ---- rendering ----
@@ -709,98 +612,75 @@ export class SubsonicPlayerElement extends PlayerBase {
       return html`<div class="empty">Library is empty — click ↺ Refresh library after connecting.</div>`;
     }
     const { tracks, matched } = this._buildDisplay();
-    const current = this._currentIndex >= 0 ? this._playlist[this._currentIndex] : null;
     return html`
       ${matched < this._library.length
         ? html`<div class="lib-count">${matched} / ${this._library.length} tracks${tracks.length < matched ? ` — showing first ${tracks.length}` : ""}</div>`
         : html`<div class="lib-count">${matched} track${matched !== 1 ? "s" : ""}</div>`}
       ${tracks.map((tr) => html`
-        <div class="lib-row ${current?.id === tr.id && this._playing ? "playing" : ""}"
-             @click=${() => this._playTrack(tr, tracks)}>
+        <div class="lib-row"
+             draggable="true"
+             @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, tr)}>
           <div class="lib-cell">${String(tr.title  ?? "")}</div>
           <div class="lib-cell">${String(tr.artist ?? "")}</div>
           <div class="lib-cell">${String(tr.album  ?? "")}</div>
           <div class="lib-cell">${tr.year ?? ""}</div>
           <div class="lib-cell">${String(tr.genre  ?? "")}</div>
           <div class="lib-cell dur">${fmt(tr.duration ?? 0)}</div>
+          <div class="lib-actions">
+            <button class="act-btn" title="Append to queue"
+                    @click=${(e: Event) => { e.stopPropagation(); queue.add([this._toQueueItem(tr)]); }}>+</button>
+            <button class="act-btn" title="Play after current"
+                    @click=${(e: Event) => { e.stopPropagation(); queue.insertNext([this._toQueueItem(tr)]); }}>⏭</button>
+            <button class="act-btn play-now" title="Play now"
+                    @click=${(e: Event) => { e.stopPropagation(); queue.playNow([this._toQueueItem(tr)]); }}>▶</button>
+          </div>
         </div>
       `)}
     `;
   }
 
   override render() {
-    const current  = this._currentIndex >= 0 ? this._playlist[this._currentIndex] : null;
-    const volPct   = Math.round(this._volume * 100);
-
     return html`
       ${this._renderSourcesBar()}
       ${this._showForm ? this._renderSourceForm() : nothing}
       ${this._renderConnectStrip()}
 
-      <!-- library: sticky header + scrollable rows -->
-      <div class="library">
-        <div class="lib-header">
-          <div class="lib-cols">
-            ${this._renderColHeader("title",  "Title")}
-            ${this._renderColHeader("artist", "Artist")}
-            ${this._renderColHeader("album",  "Album")}
-            ${this._renderColHeader("year",   "Year")}
-            ${this._renderColHeader("genre",  "Genre")}
-            <div class="col-hd col-hd-dur">Duration</div>
+      <div class="panels">
+        <!-- left: library search -->
+        <div class="search-panel">
+          <div class="lib-header">
+            <div class="lib-cols">
+              ${this._renderColHeader("title",  "Title")}
+              ${this._renderColHeader("artist", "Artist")}
+              ${this._renderColHeader("album",  "Album")}
+              ${this._renderColHeader("year",   "Year")}
+              ${this._renderColHeader("genre",  "Genre")}
+              <div class="col-hd col-hd-dur">Duration</div>
+              <div></div>
+            </div>
+            <div class="lib-search">
+              <input placeholder="Title…"  .value=${live(this._fTitle)}
+                     @input=${(e: Event) => { this._fTitle  = (e.target as HTMLInputElement).value; }} />
+              <input placeholder="Artist…" .value=${live(this._fArtist)}
+                     @input=${(e: Event) => { this._fArtist = (e.target as HTMLInputElement).value; }} />
+              <input placeholder="Album…"  .value=${live(this._fAlbum)}
+                     @input=${(e: Event) => { this._fAlbum  = (e.target as HTMLInputElement).value; }} />
+              <input placeholder="Year…"   .value=${live(this._fYear)}
+                     @input=${(e: Event) => { this._fYear   = (e.target as HTMLInputElement).value; }} />
+              <input placeholder="Genre…"  .value=${live(this._fGenre)}
+                     @input=${(e: Event) => { this._fGenre  = (e.target as HTMLInputElement).value; }} />
+              <div></div>
+              <div></div>
+            </div>
           </div>
-          <div class="lib-search">
-            <input placeholder="Title…"  .value=${live(this._fTitle)}
-                   @input=${(e: Event) => { this._fTitle  = (e.target as HTMLInputElement).value; }} />
-            <input placeholder="Artist…" .value=${live(this._fArtist)}
-                   @input=${(e: Event) => { this._fArtist = (e.target as HTMLInputElement).value; }} />
-            <input placeholder="Album…"  .value=${live(this._fAlbum)}
-                   @input=${(e: Event) => { this._fAlbum  = (e.target as HTMLInputElement).value; }} />
-            <input placeholder="Year…"   .value=${live(this._fYear)}
-                   @input=${(e: Event) => { this._fYear   = (e.target as HTMLInputElement).value; }} />
-            <input placeholder="Genre…"  .value=${live(this._fGenre)}
-                   @input=${(e: Event) => { this._fGenre  = (e.target as HTMLInputElement).value; }} />
-            <div></div>
+          <div class="lib-rows">
+            ${this._renderLibrary()}
           </div>
         </div>
 
-        <div class="lib-rows">
-          ${this._renderLibrary()}
-        </div>
+        <!-- right: shared queue panel -->
+        <queue-panel></queue-panel>
       </div>
-
-      <!-- audio error -->
-      ${this._audioError ? html`<div class="audio-error">${this._audioError}</div>` : nothing}
-
-      <!-- now-playing panel -->
-      ${current ? html`
-        <div class="now-playing">
-          <div class="np-title">${current.title ?? current.id}</div>
-          <div class="np-sub">
-            ${current.artist ?? ""}
-            ${current.album ? ` — ${current.album}` : ""}
-          </div>
-          <input class="seek" type="range" min="0" max=${this._duration || 1}
-                 .value=${live(this._elapsed)} @change=${this._onSeek} />
-          <div class="np-time">${fmt(this._elapsed)} / ${fmt(this._duration)}</div>
-          <div class="ctrls">
-            <button class="btn" @click=${() => this._playPrev()}>⏮</button>
-            <button class="btn primary"
-                    @click=${this._playing ? () => this._pause() : () => this._resume()}>
-              ${this._playing ? "⏸" : "▶"}
-            </button>
-            <button class="btn" @click=${() => this._stop()}>⏹</button>
-            <button class="btn" @click=${() => void this._playNext()}>⏭</button>
-            <button class="btn ${this._normalizeOn ? "primary" : ""}"
-                    ?disabled=${this._normalizeBlocked}
-                    title=${this._normalizeBlocked ? t("player.normalize-blocked") : ""}
-                    @click=${() => this._toggleNormalize()}>≈ Norm</button>
-          </div>
-          <div class="vol">
-            <span>${t("player.volume")}</span>
-            <input type="range" min="0" max="100" .value=${live(volPct)} @input=${this._onVolume} />
-          </div>
-        </div>
-      ` : nothing}
     `;
   }
 }

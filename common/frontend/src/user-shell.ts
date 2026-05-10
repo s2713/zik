@@ -594,8 +594,13 @@ export class UserShell extends PlayerBase {
 
   // ---- footer transport ----
 
-  /** Id of the service currently playing (from state report), or the visible one. */
+  /**
+   * Id of the service currently playing.
+   * Prefer live queue state (zero lag); fall back to backend poll for non-queue services (MPD).
+   */
   private get _playingId(): string | null {
+    const qStatus = this._playlistState?.status;
+    if (qStatus && qStatus !== "stopped") return this._playlistState!.serviceId || null;
     return this._playerState?.track?.service ?? this._activeId;
   }
 
@@ -823,15 +828,17 @@ export class UserShell extends PlayerBase {
   // ---- render: persistent footer transport bar ----
   private _renderFooter(): TemplateResult {
     const ps      = this._playerState;
-    const pl      = this._playingId === "files" ? this._playlistState : null;
-    const playing = ps?.status === "playing";
+    // Use live queue status when available — more accurate than 2s backend poll.
+    // _playlistState is emitted by QueueController on every status change.
+    const pl      = this._playlistState;
+    const playing = pl ? pl.status === "playing" : ps?.status === "playing";
     const title   = ps?.track?.title  ?? "";
     const artist  = ps?.track?.artist ?? "";
     const vol     = this._muted ? 0 : this._volume;
     const muteIcon = this._muted || this._volume === 0 ? "🔇"
       : this._volume < 40 ? "🔈" : this._volume < 75 ? "🔉" : "🔊";
 
-    // Prefer live position from files player (1 s resolution); fall back to backend poll.
+    // Prefer live position from queue controller (1 s resolution); fall back to backend poll.
     const pos = pl?.position ?? ps?.position ?? 0;
     const dur = pl?.duration ?? ps?.track?.duration ?? 0;
     const pct = dur > 0 ? Math.min(100, (pos / dur) * 100) : 0;

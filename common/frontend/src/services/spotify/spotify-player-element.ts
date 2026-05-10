@@ -107,7 +107,7 @@ export class SpotifyPlayerElement extends PlayerBase {
 
   private readonly _onBusCmd = (e: Event): void => {
     const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
-    if (cmd.serviceId !== "spotify") return;
+    if (!("serviceId" in cmd) || cmd.serviceId !== "spotify") return;
     switch (cmd.type) {
       case "Play":      void this._command(this._playing ? "Play" : "Play"); break;
       case "Pause":     void this._command("Pause");    break;

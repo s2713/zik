@@ -115,6 +115,11 @@ export class VolumeNormalizer {
     this._tick();
   }
 
+  /** Resume the AudioContext if the browser auto-suspended it between tracks. */
+  resumeContext(): void {
+    if (this._ctx?.state === "suspended") void this._ctx.resume();
+  }
+
   /** Stop normalisation and reset gain to unity. */
   disable(): void {
     this._enabled = false;

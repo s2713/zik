@@ -168,7 +168,7 @@ export class PodcastsPlayerElement extends PlayerBase {
 
   private readonly _onBusCmd = (e: Event): void => {
     const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
-    if (cmd.serviceId !== "podcasts") return;
+    if (!("serviceId" in cmd) || cmd.serviceId !== "podcasts") return;
     switch (cmd.type) {
       case "Play":      void this._audio.play(); break;
       case "Pause":     this._audio.pause();     break;

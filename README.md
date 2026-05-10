@@ -122,6 +122,20 @@ resumes from the new position after a brief gap.
 No telemetry of any kind. All analytics are opt-out-by-default because
 they are not collected in the first place.
 
+## Security
+
+### Subsonic stream URL credentials
+
+Subsonic authentication uses a token+salt pair (token = MD5(password+salt)) that is
+embedded as query parameters in each track's stream URL
+(`/rest/stream?u=…&t=…&s=…`). These URLs are built in the browser from auth data
+returned by the backend, and are only ever passed as `<audio src>` — the browser does
+not expose them to JavaScript after assignment. They are held in memory as part of the
+play queue (`QueueItem.audioUrl`) for the lifetime of the session and are never written
+to disk or localStorage. An attacker with access to the browser process memory or
+DevTools on the device could extract them. On a locked-down kiosk this is an acceptable
+risk; on a shared or multi-user desktop it should be noted.
+
 ## License
 
 GPL v3. See [LICENSE](LICENSE).

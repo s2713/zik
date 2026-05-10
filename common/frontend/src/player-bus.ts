@@ -5,7 +5,8 @@
 
 export type PlayerBusCmd =
   | { type: "Play" | "Pause" | "Stop" | "Next" | "Previous"; serviceId: string | null }
-  | { type: "SetVolume"; volume: number; serviceId: string | null };  // volume: 0.0–1.0
+  | { type: "SetVolume"; volume: number; serviceId: string | null }  // volume: 0.0–1.0
+  | { type: "SuspendQueue" };  // non-queueable service (e.g. MPD) is taking over audio
 
 /** The bus itself; service players subscribe with addEventListener("cmd", …). */
 export const playerBus = new EventTarget();
@@ -21,6 +22,7 @@ export function dispatchPlayerCmd(cmd: PlayerBusCmd): void {
  */
 export interface PlaylistStateEvent {
   serviceId: string;
+  status: "playing" | "paused" | "stopped" | "suspended";
   index: number;          // 0-based current track index; -1 when nothing loaded
   total: number;          // total tracks in playlist
   totalDuration: number;  // sum of all track durations, seconds

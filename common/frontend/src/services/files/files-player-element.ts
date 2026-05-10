@@ -1,13 +1,14 @@
 import { css, html, nothing, type TemplateResult } from "lit";
-import { customElement, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
+import { customElement, state } from "lit/decorators.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
-import { VolumeNormalizer } from "../../audio/normalizer.js";
-import { type PlayerBusCmd, type PlaylistStateEvent, playerBus } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
-import { FilesPlayer, type FileTrack, type FilesPlayerState } from "./files-player.js";
+import { queue } from "../../queue/queue-controller.js";
+import type { QueueItem } from "../../queue/queue-item.js";
+import type { FileTrack } from "./files-player.js";
+import "../../queue/queue-panel-element.js";
 
 // ---- interfaces ----
 
@@ -24,21 +25,20 @@ interface LanForm {
   subpath: string; username: string; password: string;
 }
 
-interface PlaylistEntry {
-  track: FileTrack;
-  uid:   number;   // unique per addition; stable through reorder
-}
-
 // ---- helpers ----
 
-/** Format seconds as m:ss or h:mm:ss. */
-function fmtDuration(totalSecs: number): string {
-  const h = Math.floor(totalSecs / 3600);
-  const m = Math.floor((totalSecs % 3600) / 60);
-  const s = Math.floor(totalSecs % 60);
-  return h > 0
-    ? `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
-    : `${m}:${s.toString().padStart(2, "0")}`;
+/** Build a QueueItem from a FileTrack for the shared cross-service queue. */
+function fileTrackToQueueItem(track: FileTrack): QueueItem {
+  return {
+    serviceId: "files",
+    trackId:   track.id,
+    audioUrl:  `/api/files/audio/${track.id}`,
+    artUrl:    `/api/files/cover/${track.id}`,
+    title:     track.title,
+    artist:    track.artist,
+    album:     track.album,
+    duration:  track.duration,
+  };
 }
 
 /** Parse "1967", "1965-1970" or "1960s" into a {from, to} year range. */
@@ -55,9 +55,9 @@ function parseYearFilter(s: string): { from: number; to: number } | null {
 type SortCol = "artist" | "album" | "track" | "year" | "source";
 
 /**
- * Files service player: two-panel search + playlist UI.
+ * Files service player: two-panel search + queue UI.
  * Left panel: library search with artist/album/year/track filters and source checkboxes.
- * Right panel: playlist with drag-and-drop reorder, multi-select, and playback controls.
+ * Right panel: shared <queue-panel> element (cross-service play queue).
  */
 @customElement("files-player")
 export class FilesPlayerElement extends PlayerBase {
@@ -209,170 +209,45 @@ export class FilesPlayerElement extends PlayerBase {
     .row-act.play-now { background: #1d4ed8; }
     .row-act.play-now:hover { background: #2563eb; }
 
-    /* ---- playlist panel ---- */
-    .playlist-panel { display: flex; flex-direction: column; overflow: hidden; }
-    .playlist-controls {
-      flex-shrink: 0;
-      display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;
-      padding: 0.5rem 0.75rem;
-      background: #1e293b;
-      border-bottom: 1px solid #334155;
-      font-size: 0.82rem;
-    }
-    .pl-ctrl {
-      padding: 0.55em 0.9em; border-radius: 4px;
-      background: #334155; border: none; color: #f1f5f9; cursor: pointer; font-size: 0.95em;
-      display: inline-flex; align-items: center; justify-content: center; line-height: 1;
-    }
-    .pl-ctrl:hover { background: #475569; }
-    .pl-ctrl.active { background: #1d4ed8; }
-    .pl-ctrl:disabled { opacity: 0.4; cursor: default; }
-    .sort-sep { color: #475569; padding: 0 0.1rem; }
-    .pl-count { margin-left: auto; color: #64748b; font-size: 0.78em; }
-
-    /* playlist track list */
-    .playlist-list { flex: 1; overflow-y: auto; }
-    .pl-row {
-      display: grid;
-      grid-template-columns: 28px 32px 1fr 1fr 3em 5em;
-      align-items: center; gap: 0.3rem;
-      padding: 0.2rem 0.5rem;
-      border-bottom: 1px solid rgba(255,255,255,0.04);
-      user-select: none; cursor: pointer;
-    }
-    .pl-row:hover { background: rgba(255,255,255,0.04); }
-    .pl-row.selected { background: rgba(96,165,250,0.15); }
-    .pl-row.playing  { background: rgba(96,165,250,0.22); font-weight: 600; }
-    .pl-row.drop-above { border-top: 2px solid #60a5fa; }
-    .pl-row[draggable] { cursor: grab; }
-    .pl-num  { font-size: 0.72em; color: #64748b; text-align: right; padding-right: 0.2rem; }
-    .pl-art  { width: 32px; height: 32px; object-fit: cover; border-radius: 3px; }
-    .pl-art-ph { width: 32px; height: 32px; border-radius: 3px;
-                 background: #334155; display: flex; align-items: center;
-                 justify-content: center; font-size: 0.9rem; color: #475569; }
-    .pl-cell { font-size: 0.8em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-               min-width: 0; }
-    .pl-cell.dim { color: #64748b; font-size: 0.72em; }
-    .pl-drop-end {
-      height: 4px;
-      background: transparent;
-    }
-    .pl-drop-end.drop-above { background: #60a5fa; border-radius: 2px; }
-
     /* empty states */
     .empty { color: #475569; font-size: 0.85em; padding: 1.5rem; text-align: center; }
 
-    /* scan button and normalizer */
+    /* scan button */
     .scan-btn { font-size: 0.75em; }
-    .norm-btn { font-size: 0.95em; padding: 0.55em 0.85em; border-radius: 3px;
-                background: #334155; border: none; color: #94a3b8; cursor: pointer; }
-    .norm-btn.on { background: #0f4c75; color: #7dd3fc; }
-    .norm-btn:disabled { opacity: 0.4; cursor: default; }
   `;
 
-  // ---- audio engine ----
-  private readonly _player     = new FilesPlayer();
-  private readonly _normalizer = new VolumeNormalizer();
-
   // ---- state ----
-  @state() private _ps: FilesPlayerState = { ...this._player.state };
   @state() private _tracks:         FileTrack[]      = [];
   @state() private _sources:        Source[]         = [];
   @state() private _enabledSources: Set<string>      = new Set(["internal"]);
-  @state() private _playlist:       PlaylistEntry[]  = [];
-  @state() private _currentIndex    = -1;
-  @state() private _selected:       Set<number>      = new Set();
-  @state() private _dropIndex:      number | null    = null;  // drag-over target in playlist
   @state() private _showAddLan      = false;
-  @state() private _normalizeOn     = false;
-  @state() private _normalizeBlocked = false;
   @state() private _expandedArtists: Set<string> = new Set();
   @state() private _expandedAlbums:  Set<string> = new Set();
   @state() private _sortCol: SortCol = "artist";
   @state() private _sortDir: 1 | -1  = 1;
 
-  // search fields (not @state to avoid per-keystroke re-renders; debounced manually)
+  // search fields (not @state; debounced via _searchTick)
   private _qArtist = "";
   private _qAlbum  = "";
   private _qYear   = "";
   private _qTrack  = "";
-  @state() private _searchTick = 0;  // bumped by debounce to trigger re-render
+  @state() private _searchTick = 0;
 
   private _lanForm: LanForm = { label: "", server: "", share: "",
                                  subpath: "", username: "", password: "" };
-  private _uidCounter   = 0;
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // artist-image cache: name → URL | null (null = not found / pending)
   private _artistImages: Record<string, string | null> = {};
-  // anchor for shift-click range selection; set on every non-shift click
-  private _selectionAnchor = -1;
-
-  // ---- bus handler ----
-  private readonly _onBusCmd = (e: Event): void => {
-    const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
-    if (cmd.serviceId !== "files") return;
-    const ps = this._ps;
-    switch (cmd.type) {
-      case "Play":      if (ps.status === "paused") this._resume(); break;
-      case "Pause":     this._pause();    break;
-      case "Stop":      this._stop();     break;
-      case "Next":      this._playNext(); break;
-      case "Previous":  this._playPrev(); break;
-      case "SetVolume": this._player.setVolume(cmd.volume); break;
-    }
-  };
-
-  private readonly _onStateChange = (e: Event): void => {
-    this._ps = (e as CustomEvent<FilesPlayerState>).detail;
-    this._dispatchPlaylistState();
-  };
-
-  private _dispatchPlaylistState(): void {
-    const totalDuration = this._playlist.reduce((s, e) => s + e.track.duration, 0);
-    playerBus.dispatchEvent(new CustomEvent<PlaylistStateEvent>("playlist-state", {
-      detail: {
-        serviceId: "files",
-        index: this._currentIndex,
-        total: this._playlist.length,
-        totalDuration,
-        position: this._ps.position,
-        duration: this._ps.track?.duration ?? 0,
-      },
-    }));
-  }
-
-  // Auto-advance when a track ends naturally (fires before statechange → stopped).
-  private readonly _onTrackEnded = (): void => { this._playNext(); };
-
-  // Remove selected tracks when Delete or Backspace is pressed outside any input.
-  private readonly _onKeyDown = (e: KeyboardEvent): void => {
-    if (e.key !== "Delete" && e.key !== "Backspace") return;
-    if (this._selected.size === 0) return;
-    const target = e.composedPath()[0];
-    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-    e.preventDefault();
-    this._removeSelected();
-  };
 
   override connectedCallback(): void {
     super.connectedCallback();
-    this._player.addEventListener("statechange",   this._onStateChange);
-    this._player.audioElement.addEventListener("ended", this._onTrackEnded);
-    playerBus.addEventListener("cmd", this._onBusCmd);
-    document.addEventListener("keydown", this._onKeyDown);
     void this._fetchSources();
     void this._fetchTracks();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
-    this._player.removeEventListener("statechange",   this._onStateChange);
-    this._player.audioElement.removeEventListener("ended", this._onTrackEnded);
-    playerBus.removeEventListener("cmd", this._onBusCmd);
-    document.removeEventListener("keydown", this._onKeyDown);
-    this._player.stop();
-    this._normalizer.disconnect();
   }
 
   // ---- sources ----
@@ -497,245 +372,12 @@ export class FilesPlayerElement extends PlayerBase {
     return null;
   }
 
-  // ---- playlist management ----
+  // ---- drag-and-drop (search → queue) ----
 
-  private _nextUid(): number { return this._uidCounter++; }
-
-  private _appendTracks(tracks: FileTrack[]): void {
-    this._playlist = [...this._playlist,
-      ...tracks.map(t => ({ track: t, uid: this._nextUid() }))];
-    this._dispatchPlaylistState();
-  }
-
-  private _addAfterCurrent(tracks: FileTrack[]): void {
-    const ins = this._currentIndex + 1;
-    const entries = tracks.map(t => ({ track: t, uid: this._nextUid() }));
-    this._playlist = [
-      ...this._playlist.slice(0, ins),
-      ...entries,
-      ...this._playlist.slice(ins),
-    ];
-    this._dispatchPlaylistState();
-  }
-
-  private _playNow(tracks: FileTrack[]): void {
-    const ins = this._currentIndex + 1;
-    const entries = tracks.map(t => ({ track: t, uid: this._nextUid() }));
-    this._playlist = [
-      ...this._playlist.slice(0, ins),
-      ...entries,
-      ...this._playlist.slice(ins),
-    ];
-    this._playAt(ins);
-  }
-
-  private _playAt(index: number): void {
-    if (index < 0 || index >= this._playlist.length) return;
-    this._currentIndex = index;
-    this._selected = new Set();
-    const track = this._playlist[index].track;
-    this._player.play(track, `/api/files/audio/${track.id}`);
-    this._connectNormalizer();
-    void this._postCommand("Play", track);
-    this._dispatchPlaylistState();
-  }
-
-  private _playNext(): void {
-    if (this._currentIndex + 1 < this._playlist.length)
-      this._playAt(this._currentIndex + 1);
-  }
-
-  private _playPrev(): void {
-    if (this._currentIndex > 0)
-      this._playAt(this._currentIndex - 1);
-  }
-
-  private _removeSelected(): void {
-    const del = this._selected;
-    const newPl = this._playlist.filter((_, i) => !del.has(i));
-    // Adjust currentIndex: count how many deleted entries were before it.
-    const removedBefore = [...del].filter(i => i < this._currentIndex).length;
-    let newIdx = this._currentIndex - removedBefore;
-    if (del.has(this._currentIndex)) {
-      // The playing track was deleted; stop and reset.
-      this._player.stop();
-      newIdx = Math.min(this._currentIndex - removedBefore, newPl.length - 1);
-    }
-    this._playlist = newPl;
-    this._currentIndex = newIdx;
-    this._selected = new Set();
-    this._selectionAnchor = -1;
-    this._dispatchPlaylistState();
-  }
-
-  private _clearPlaylist(): void {
-    this._player.stop();
-    void this._postCommand("Stop");
-    this._playlist = [];
-    this._currentIndex = -1;
-    this._selected = new Set();
-    this._selectionAnchor = -1;
-    this._dispatchPlaylistState();
-  }
-
-  private _shufflePlaylist(): void {
-    const currentUid = this._playlist[this._currentIndex]?.uid ?? null;
-    const shuffled = [...this._playlist].sort(() => Math.random() - 0.5);
-    this._playlist = shuffled;
-    this._currentIndex = currentUid !== null
-      ? shuffled.findIndex(e => e.uid === currentUid)
-      : -1;
-    this._dispatchPlaylistState();
-  }
-
-  private _sortPlaylist(by: "artist" | "year" | "album"): void {
-    const currentUid = this._playlist[this._currentIndex]?.uid ?? null;
-    const sorted = [...this._playlist].sort((a, b) => {
-      const ta = a.track; const tb = b.track;
-      if (by === "artist")
-        return ta.artist.localeCompare(tb.artist) ||
-               ta.album.localeCompare(tb.album) ||
-               ((ta.track_number ?? 999) - (tb.track_number ?? 999));
-      if (by === "year")
-        return ((ta.year ?? 0) - (tb.year ?? 0)) ||
-               ta.artist.localeCompare(tb.artist) ||
-               ta.album.localeCompare(tb.album);
-      // album
-      return ta.album.localeCompare(tb.album) ||
-             ta.artist.localeCompare(tb.artist) ||
-             ((ta.track_number ?? 999) - (tb.track_number ?? 999));
-    });
-    this._playlist = sorted;
-    this._currentIndex = currentUid !== null
-      ? sorted.findIndex(e => e.uid === currentUid) : -1;
-    this._dispatchPlaylistState();
-  }
-
-  /** Move dragged playlist indices to just before `toIndex`. */
-  private _movePlaylistItems(fromIndices: number[], toIndex: number): void {
-    const fromSet = new Set(fromIndices);
-    const items = fromIndices.sort((a, b) => a - b).map(i => this._playlist[i]);
-    const rest  = this._playlist.filter((_, i) => !fromSet.has(i));
-    const removedBefore = fromIndices.filter(i => i < toIndex).length;
-    const insertAt = Math.max(0, Math.min(toIndex - removedBefore, rest.length));
-    const newPl = [...rest.slice(0, insertAt), ...items, ...rest.slice(insertAt)];
-    const currentUid = this._playlist[this._currentIndex]?.uid ?? null;
-    this._playlist = newPl;
-    this._currentIndex = currentUid !== null
-      ? newPl.findIndex(e => e.uid === currentUid) : -1;
-    this._selected = new Set();
-    this._dispatchPlaylistState();
-  }
-
-  // ---- playback control ----
-
-  private _pause(): void { this._player.pause(); void this._postCommand("Pause"); }
-  private _resume(): void { this._player.resume(); void this._postCommand("Play"); }
-  private _stop(): void { this._player.stop(); void this._postCommand("Stop"); }
-
-  private _connectNormalizer(): void {
-    if (!VolumeNormalizer.isSameOrigin(this._player.audioElement.src)) {
-      this._normalizeBlocked = true; this._normalizer.disable(); return;
-    }
-    if (this._normalizer.blocked) { this._normalizeBlocked = true; return; }
-    const ok = this._normalizer.connect(this._player.audioElement);
-    this._normalizeBlocked = !ok;
-    if (ok && this._normalizeOn) this._normalizer.enable();
-  }
-
-  private _toggleNormalize(): void {
-    if (this._normalizeBlocked) return;
-    this._normalizeOn = !this._normalizeOn;
-    this._normalizeOn ? this._normalizer.enable() : this._normalizer.disable();
-  }
-
-  private async _postCommand(type: string, track?: FileTrack): Promise<void> {
-    const ps = this._player.state;
-    const tr = track ?? ps.track;
-    try {
-      await fetch("/api/player/command", {
-        method: "POST",
-        headers: { "content-type": "application/json", ...getCsrfHeaders() },
-        body: JSON.stringify({
-          type,
-          service:  "files",
-          track_id:  tr?.id       ?? "",
-          title:     tr?.title    ?? "",
-          duration:  tr?.duration ?? 0,
-          artist:    tr?.artist   ?? "",
-          album:     tr?.album    ?? "",
-          art_url:   tr ? `/api/files/cover/${tr.id}` : "",
-          position:  ps.position,
-          volume:    ps.volume,
-        }),
-      });
-    } catch { /* backend unavailable */ }
-  }
-
-  // ---- drag-and-drop ----
-
+  /** Drag tracks from the search panel; queue panel accepts the drop. */
   private _onSearchDragStart(e: DragEvent, tracks: FileTrack[]): void {
     e.dataTransfer!.effectAllowed = "copy";
-    e.dataTransfer!.setData("files-tracks", JSON.stringify(tracks.map(t => t.id)));
-  }
-
-  private _onPlaylistDragStart(e: DragEvent, index: number): void {
-    if (!this._selected.has(index)) this._selected = new Set([index]);
-    e.dataTransfer!.effectAllowed = "move";
-    e.dataTransfer!.setData("playlist-indices", JSON.stringify([...this._selected]));
-  }
-
-  private _onPlaylistDragOver(e: DragEvent, index: number): void {
-    const types = e.dataTransfer?.types ?? [];
-    if (types.includes("files-tracks") || types.includes("playlist-indices")) {
-      e.preventDefault();
-      if (this._dropIndex !== index) this._dropIndex = index;
-    }
-  }
-
-  private _onPlaylistDrop(e: DragEvent, index: number): void {
-    e.preventDefault();
-    const types = e.dataTransfer?.types ?? [];
-    if (types.includes("playlist-indices")) {
-      const indices: number[] = JSON.parse(e.dataTransfer!.getData("playlist-indices"));
-      this._movePlaylistItems(indices, index);
-    } else if (types.includes("files-tracks")) {
-      const ids: string[] = JSON.parse(e.dataTransfer!.getData("files-tracks"));
-      const trackMap = new Map(this._tracks.map(t => [t.id, t]));
-      const tracks = ids.map(id => trackMap.get(id)).filter(Boolean) as FileTrack[];
-      const entries = tracks.map(t => ({ track: t, uid: this._nextUid() }));
-      const pl = [...this._playlist];
-      pl.splice(index, 0, ...entries);
-      const currentUid = this._playlist[this._currentIndex]?.uid ?? null;
-      this._playlist = pl;
-      this._currentIndex = currentUid !== null ? pl.findIndex(e => e.uid === currentUid) : -1;
-    }
-    this._dropIndex = null;
-  }
-
-  private _onPlaylistDragLeave(): void { this._dropIndex = null; }
-
-  // ---- playlist row click (multi-select) ----
-
-  private _onPlaylistClick(e: MouseEvent, index: number): void {
-    if (e.shiftKey && this._selectionAnchor >= 0) {
-      // Range select from anchor to clicked row; replaces current selection.
-      const lo = Math.min(this._selectionAnchor, index);
-      const hi = Math.max(this._selectionAnchor, index);
-      const next = new Set<number>();
-      for (let i = lo; i <= hi; i++) next.add(i);
-      this._selected = next;
-      // anchor stays fixed until the next plain/ctrl click
-    } else if (e.ctrlKey || e.metaKey) {
-      const next = new Set(this._selected);
-      if (next.has(index)) next.delete(index); else next.add(index);
-      this._selected = next;
-      this._selectionAnchor = index;
-    } else {
-      // Plain click: select only this row; use ▶ in the playlist bar to play.
-      this._selected = new Set([index]);
-      this._selectionAnchor = index;
-    }
+    e.dataTransfer!.setData("queue-items-json", JSON.stringify(tracks.map(fileTrackToQueueItem)));
   }
 
   // ---- source label lookup ----
@@ -745,16 +387,6 @@ export class FilesPlayerElement extends PlayerBase {
   }
 
   // ---- rendering: cover art helpers ----
-
-  private _artImg(trackId: string, cls: string): TemplateResult {
-    return html`<img class="${cls}" src="/api/files/cover/${trackId}"
-      @error=${(e: Event) => { (e.target as HTMLImageElement).style.display = "none"; }}
-      alt="" />`;
-  }
-
-  private _artPlaceholder(cls: string, icon = "♪"): TemplateResult {
-    return html`<div class="${cls}">${icon}</div>`;
-  }
 
   // ---- rendering: search panel ----
 
@@ -828,12 +460,12 @@ export class FilesPlayerElement extends PlayerBase {
   private _renderActions(tracks: FileTrack[]): TemplateResult {
     return html`
       <div class="row-actions">
-        <button class="row-act" title="Append"
-                @click=${(e: Event) => { e.stopPropagation(); this._appendTracks(tracks); }}>+</button>
-        <button class="row-act" title="After current"
-                @click=${(e: Event) => { e.stopPropagation(); this._addAfterCurrent(tracks); }}>⏭</button>
+        <button class="row-act" title="Append to queue"
+                @click=${(e: Event) => { e.stopPropagation(); queue.add(tracks.map(fileTrackToQueueItem)); }}>+</button>
+        <button class="row-act" title="Play after current"
+                @click=${(e: Event) => { e.stopPropagation(); queue.insertNext(tracks.map(fileTrackToQueueItem)); }}>⏭</button>
         <button class="row-act play-now" title="Play now"
-                @click=${(e: Event) => { e.stopPropagation(); this._playNow(tracks); }}>▶</button>
+                @click=${(e: Event) => { e.stopPropagation(); queue.playNow(tracks.map(fileTrackToQueueItem)); }}>▶</button>
       </div>`;
   }
 
@@ -1030,88 +662,7 @@ export class FilesPlayerElement extends PlayerBase {
   // ---- rendering: playlist panel ----
 
   private _renderPlaylistPanel(): TemplateResult {
-    const hasSel  = this._selected.size > 0;
-    const pl      = this._playlist;
-
-    return html`
-      <div class="playlist-panel">
-        <div class="playlist-controls">
-
-          <!-- always starts from beginning; footer bar handles pause/resume -->
-          <button class="pl-ctrl" title="Play from beginning"
-                  @click=${() => this._playAt(0)}
-                  ?disabled=${pl.length === 0}>▶</button>
-
-          <!-- selection ops -->
-          <button class="pl-ctrl" title="Remove selected"
-                  ?disabled=${!hasSel}
-                  @click=${() => this._removeSelected()}>🗑</button>
-          <button class="pl-ctrl" title="Clear playlist"
-                  ?disabled=${pl.length === 0}
-                  @click=${() => this._clearPlaylist()}>🔥</button>
-          <button class="pl-ctrl" title="Shuffle"
-                  ?disabled=${pl.length < 2}
-                  @click=${() => this._shufflePlaylist()}>🔀</button>
-
-          <!-- sort -->
-          <span class="sort-sep">|</span>
-          <button class="pl-ctrl" title="Sort by artist → album"
-                  @click=${() => this._sortPlaylist("artist")}>Artist</button>
-          <button class="pl-ctrl" title="Sort by year → artist → album"
-                  @click=${() => this._sortPlaylist("year")}>Year</button>
-          <button class="pl-ctrl" title="Sort by album → artist"
-                  @click=${() => this._sortPlaylist("album")}>Album</button>
-
-          <!-- normalizer -->
-          <span class="sort-sep">|</span>
-          <button class="norm-btn ${this._normalizeOn ? "on" : ""}"
-                  ?disabled=${this._normalizeBlocked}
-                  title="Volume normalizer"
-                  @click=${() => this._toggleNormalize()}>≈ Norm</button>
-
-          <span class="pl-count">${pl.length} track${pl.length !== 1 ? "s" : ""}${pl.length > 0 ? ` · ${fmtDuration(pl.reduce((s, e) => s + e.track.duration, 0))}` : ""}</span>
-        </div>
-
-        <div class="playlist-list"
-             @dragover=${(e: DragEvent) => this._onPlaylistDragOver(e, pl.length)}
-             @drop=${(e: DragEvent) => this._onPlaylistDrop(e, pl.length)}
-             @dragleave=${() => this._onPlaylistDragLeave()}>
-          ${pl.length === 0
-            ? html`<div class="empty">Playlist is empty — drag tracks here or use ▶ / + / ⏭</div>`
-            : pl.map((entry, i) => {
-                const tr      = entry.track;
-                const isCur   = i === this._currentIndex;
-                const isSel   = this._selected.has(i);
-                const isDrop  = this._dropIndex === i;
-                return html`
-                  <div class="pl-row ${isCur ? "playing" : ""} ${isSel ? "selected" : ""} ${isDrop ? "drop-above" : ""}"
-                       draggable="true"
-                       @click=${(e: MouseEvent) => this._onPlaylistClick(e, i)}
-                       @dblclick=${(e: MouseEvent) => { e.stopPropagation(); this._playAt(i); }}
-                       @dragstart=${(e: DragEvent) => this._onPlaylistDragStart(e, i)}
-                       @dragover=${(e: DragEvent) => { e.stopPropagation(); this._onPlaylistDragOver(e, i); }}
-                       @drop=${(e: DragEvent) => { e.stopPropagation(); this._onPlaylistDrop(e, i); }}
-                       @dragleave=${(e: DragEvent) => { e.stopPropagation(); this._onPlaylistDragLeave(); }}>
-                    <span class="pl-num">${i + 1}</span>
-                    <!-- overflow:hidden clips the placeholder behind the img; on img error
-                         img becomes display:none and placeholder shows at offset 0 -->
-                    <div style="position:relative;width:32px;height:32px;overflow:hidden;flex-shrink:0;">
-                      ${this._artImg(tr.id, "pl-art")}
-                      ${this._artPlaceholder("pl-art-ph")}
-                    </div>
-                    <span class="pl-cell" title="${tr.title}">${tr.title}</span>
-                    <span class="pl-cell dim" title="${tr.artist}">${tr.artist}</span>
-                    <span class="pl-cell dim">${tr.year ?? ""}</span>
-                    <span class="pl-cell dim">${this._sourceLabel(tr.source_id)}</span>
-                  </div>`;
-              })}
-          <!-- drop-zone at end -->
-          <div class="pl-drop-end ${this._dropIndex === pl.length ? "drop-above" : ""}"
-               @dragover=${(e: DragEvent) => this._onPlaylistDragOver(e, pl.length)}
-               @drop=${(e: DragEvent) => this._onPlaylistDrop(e, pl.length)}>
-          </div>
-        </div>
-      </div>`;
+    return html`<queue-panel></queue-panel>`;
   }
 
   // ---- rendering: sources bar ----

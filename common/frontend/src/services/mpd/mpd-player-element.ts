@@ -7,6 +7,7 @@ import { t } from "../../i18n/i18n.js";
 import { VolumeNormalizer } from "../../audio/normalizer.js";
 import { type PlayerBusCmd, playerBus } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
+import { queue } from "../../queue/queue-controller.js";
 
 // ---- types ----
 
@@ -251,7 +252,7 @@ export class MpdPlayerElement extends PlayerBase {
 
   private readonly _onBusCmd = (e: Event): void => {
     const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
-    if (cmd.serviceId !== "mpd") return;
+    if (!("serviceId" in cmd) || cmd.serviceId !== "mpd") return;
     switch (cmd.type) {
       case "Play":      void this._resume();                                      break;
       case "Pause":     void this._pause();                                       break;
@@ -467,6 +468,7 @@ export class MpdPlayerElement extends PlayerBase {
 
   private _startAudio(): void {
     if (!this._streamUrl) return;
+    queue.suspend();  // pause cross-service queue while MPD takes audio
     this._audioError  = "";
     this._audio.src    = this._streamUrl;
     this._audio.volume = this._volume;
