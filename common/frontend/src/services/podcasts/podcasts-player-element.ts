@@ -1,18 +1,20 @@
-import { TemplateResult, css, html, nothing } from "lit";
+import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "../../csrf.js";
 import { t } from "../../i18n/i18n.js";
-import { VolumeNormalizer } from "../../audio/normalizer.js";
-import { type PlayerBusCmd, playerBus } from "../../player-bus.js";
+import { playerBus, type SelectionStateEvent } from "../../player-bus.js";
 import { PlayerBase } from "../../player-base.js";
+import { queue } from "../../queue/queue-controller.js";
+import type { QueueItem } from "../../queue/queue-item.js";
+import "../../queue/queue-panel-element.js";
 
-interface PodcastFeed {
-  url:    string;
-  title:  string;
-  image?: string;
-}
+// ---- types ----
+
+type SortCol = "title" | "feed" | "date" | "duration";
+
+interface PodcastFeed { url: string; title: string; image?: string; }
 
 interface PodcastEpisode {
   guid:        string;
@@ -29,242 +31,302 @@ interface PodcastDetail extends PodcastFeed {
   episodes:    PodcastEpisode[];
 }
 
-interface DownloadState {
-  received: number;
-  total:    number;      // 0 if server did not send Content-Length
-  error?:   string;
+/** Episode enriched with its parent feed metadata, used for the flat/grouped list. */
+interface EpisodeEx extends PodcastEpisode {
+  feedUrl:    string;
+  feedTitle:  string;
+  feedImage?: string;
 }
 
-interface QuotaInfo {
-  used_bytes:  number;
-  limit_bytes: number;
+interface DownloadState { received: number; total: number; error?: string; }
+interface QuotaInfo { used_bytes: number; limit_bytes: number; }
+
+// ---- helpers ----
+
+function fmtSec(s: number): string {
+  if (!s || !isFinite(s)) return "--:--";
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 }
 
-/** Format bytes as a short human-readable string (e.g. "42.3 MB"). */
-function _fmtBytes(n: number): string {
-  if (n < 1024)                  return `${n} B`;
-  if (n < 1024 * 1024)          return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024)   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+function fmtBytes(n: number): string {
+  if (n < 1024)       return `${n} B`;
+  if (n < 1048576)    return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1073741824) return `${(n / 1048576).toFixed(1)} MB`;
+  return `${(n / 1073741824).toFixed(2)} GB`;
 }
 
 /**
- * Podcasts player element.
- * Saves subscribed RSS feed URLs in the backend DB; fetches and parses feeds
- * on demand; streams episode audio directly from enclosure URLs via <audio>.
- * Episodes can be saved for offline playback (progress tracked via SSE).
+ * Podcasts player — two-panel layout.
+ * Feeds bar for subscription management; left panel shows all episodes from all feeds
+ * with per-column sort and search-as-you-type; right panel is the shared queue.
+ * Episodes are played via the cross-service queue controller.
  */
 @customElement("podcasts-player")
 export class PodcastsPlayerElement extends PlayerBase {
   static styles = css`
-    :host { display: block; font-family: sans-serif; padding: 1rem; max-width: 700px; }
-    h3 { margin: 0 0 0.5rem; }
-
-    .toolbar { display: flex; gap: 0.5rem; align-items: center;
-               flex-wrap: wrap; margin-bottom: 0.5rem; }
-
-    .quota-pill { font-size: 0.78em; color: #555; background: #f0f0f0;
-                  border: 1px solid #ddd; border-radius: 10px;
-                  padding: 0.15em 0.6em; display: flex; align-items: center; gap: 0.4rem; }
-    .quota-bar  { width: 60px; height: 6px; border-radius: 3px;
-                  background: #ccc; overflow: hidden; }
-    .quota-fill { height: 100%; background: #0057b8; border-radius: 3px; transition: width .3s; }
-    .quota-fill.warning { background: #c80; }
-    .quota-fill.danger  { background: #c00; }
-
-    .add-form { background: #f0f8ff; border: 1px solid #b8d4f0; border-radius: 4px;
-                padding: 0.75rem; margin-bottom: 0.75rem; }
-    .add-form h4 { margin: 0 0 0.5rem; font-size: 0.9em; }
-    .add-form label { display: flex; flex-direction: column; gap: 0.2rem;
-                      font-size: 0.85em; margin-bottom: 0.4rem; }
-    .add-form input { font-size: 0.9em; padding: 0.2em 0.4em;
-                      border: 1px solid #bbb; border-radius: 3px; }
-    .add-form .row { display: flex; gap: 0.4rem; }
-
-    .feed-list { margin-bottom: 0.75rem; }
-    .feed-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem;
-                border: 1px solid #ddd; border-radius: 4px; margin-bottom: 0.3rem;
-                background: #fafafa; cursor: pointer; }
-    .feed-row:hover { background: #f0f0f0; }
-    .feed-row.selected { border-color: #0057b8; background: #e8f4ff; }
-    .feed-thumb { width: 36px; height: 36px; border-radius: 3px; object-fit: cover; flex-shrink: 0; }
-    .feed-thumb-placeholder { width: 36px; height: 36px; border-radius: 3px;
-                               background: #ccc; flex-shrink: 0; }
-    .feed-title { flex: 1; font-size: 0.9em; font-weight: bold; }
-    .feed-actions { display: flex; gap: 0.3rem; }
-
-    .episode-list { margin-bottom: 0.75rem; }
-    .ep-row { display: flex; gap: 0.5rem; align-items: center;
-              padding: 0.3rem 0.4rem; border-bottom: 1px solid #eee; }
-    .ep-row:hover { background: #f5f5f5; }
-    .ep-row.playing { background: #e8f4ff; font-weight: bold; }
-    .ep-play { flex: 1; display: flex; gap: 0.4rem; align-items: baseline; cursor: pointer; }
-    .ep-title { flex: 1; font-size: 0.88em; }
-    .ep-date  { font-size: 0.78em; color: #666; white-space: nowrap; }
-    .ep-dur   { font-size: 0.78em; color: #555; white-space: nowrap;
-                font-variant-numeric: tabular-nums; }
-    .ep-actions { display: flex; align-items: center; gap: 0.3rem; flex-shrink: 0; }
-    .ep-save-btn { font-size: 0.78em; padding: 0.1em 0.4em; border: 1px solid #bbb;
-                   border-radius: 3px; cursor: pointer; background: #f8f8f8; white-space: nowrap; }
-    .ep-save-btn.saved { color: #0a0; border-color: #0a0; background: #efffef; }
-    .ep-save-btn.error { color: #c00; border-color: #c00; }
-    .ep-offline-badge { font-size: 0.72em; color: #0057b8; }
-
-    /* Download progress bar — appears inside the episode row when a save is in flight */
-    .dl-progress { display: flex; align-items: center; gap: 0.4rem;
-                   font-size: 0.75em; color: #555; width: 100%;
-                   padding: 0.2rem 0.4rem; background: #f0f8ff;
-                   border-top: 1px solid #b8d4f0; }
-    .dl-bar-wrap { flex: 1; height: 6px; background: #dde; border-radius: 3px; overflow: hidden; }
-    .dl-bar      { height: 100%; background: #0057b8; border-radius: 3px;
-                   transition: width .2s; min-width: 3px; }
-    .dl-bar.indeterminate { width: 40% !important; animation: dl-pulse 1.2s ease-in-out infinite; }
-    @keyframes dl-pulse {
-      0%   { margin-left: 0%;   }
-      50%  { margin-left: 60%;  }
-      100% { margin-left: 0%;   }
+    :host {
+      display: flex; flex-direction: column;
+      height: calc(100vh - 56px - 76px);
+      font-family: sans-serif; color: #f1f5f9; background: #0f172a;
+      overflow: hidden;
     }
 
-    .audio-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;
-                   border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.85em;
-                   margin-bottom: 0.5rem; }
+    /* ---- feeds bar ---- */
+    .feeds-bar {
+      flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;
+      padding: 0.5rem 1rem; background: #1e293b; border-bottom: 1px solid #334155;
+    }
+    .feeds-label { font-size: 0.78em; color: #94a3b8; white-space: nowrap; }
+    .feed-chip {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.3em 0.65em; border-radius: 4px; font-size: 0.85em;
+      border: 1px solid #334155; background: #0f172a; color: #cbd5e1;
+      white-space: nowrap;
+    }
+    .feed-thumb { width: 18px; height: 18px; border-radius: 2px; object-fit: cover; }
+    .remove-btn {
+      padding: 0.05em 0.3em; font-size: 0.75em;
+      background: transparent; border: 1px solid #475569; border-radius: 3px;
+      color: #64748b; cursor: pointer;
+    }
+    .remove-btn:hover { background: #334155; color: #f87171; }
+    .add-feed-btn {
+      padding: 0.35em 0.75em; border-radius: 4px; font-size: 0.85em;
+      background: #0f172a; border: 1px dashed #475569; color: #64748b; cursor: pointer;
+    }
+    .add-feed-btn:hover { border-color: #94a3b8; color: #cbd5e1; }
 
-    .now-playing { border-top: 2px solid #ccc; padding-top: 0.75rem; }
-    .np-title { font-weight: bold; margin-bottom: 0.2rem; font-size: 0.95em; }
-    .np-sub   { font-size: 0.82em; color: #555; margin-bottom: 0.4rem; }
-    .seek { width: 100%; margin-bottom: 0.5rem; }
-    .ctrls { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
-    .vol { display: flex; align-items: center; gap: 0.5rem; }
-    .vol input { width: 120px; }
-    .empty { color: #888; font-size: 0.9em; margin: 1rem 0; }
+    .quota-pill {
+      font-size: 0.78em; color: #94a3b8; background: #0f172a;
+      border: 1px solid #334155; border-radius: 10px;
+      padding: 0.15em 0.6em; display: flex; align-items: center; gap: 0.4rem;
+      margin-left: auto;
+    }
+    .quota-bar  { width: 50px; height: 5px; border-radius: 3px; background: #334155; overflow: hidden; }
+    .quota-fill { height: 100%; border-radius: 3px; transition: width .3s; background: #3b82f6; }
+    .quota-fill.warning { background: #f59e0b; }
+    .quota-fill.danger  { background: #ef4444; }
+
+    /* ---- add-feed form ---- */
+    .add-form {
+      flex-shrink: 0; padding: 0.75rem 1rem; background: #1e293b;
+      border-bottom: 1px solid #334155;
+    }
+    .add-form h4 { margin: 0 0 0.5rem; font-size: 0.9em; color: #94a3b8; }
+    .add-form label { display: flex; flex-direction: column; font-size: 0.82em; gap: 0.15rem; margin-bottom: 0.4rem; }
+    .add-form input {
+      font-size: 0.9em; padding: 0.25em 0.35em;
+      border: 1px solid #334155; border-radius: 3px;
+      background: #0f172a; color: #f1f5f9;
+    }
+    .add-form .form-actions { display: flex; gap: 0.4rem; }
+    .btn {
+      padding: 0.3em 0.8em; border-radius: 4px; font-size: 0.88em; cursor: pointer;
+      border: 1px solid #475569; background: #334155; color: #f1f5f9; white-space: nowrap;
+    }
+    .btn:hover { background: #475569; }
+    .btn.primary { background: #1d4ed8; border-color: #3b82f6; }
+    .btn.primary:hover { background: #2563eb; }
+    .btn.toggled { background: #1e3a8a; border-color: #3b82f6; color: #93c5fd; }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+    .error-strip {
+      background: #7f1d1d; color: #fca5a5; border: 1px solid #dc2626;
+      border-radius: 3px; padding: 0.3rem 0.5rem; font-size: 0.82em; margin-bottom: 0.4rem;
+    }
+
+    /* ---- two-panel layout ---- */
+    .panels { display: grid; grid-template-columns: 1fr 1fr; flex: 1; overflow: hidden; }
+    @media (orientation: portrait) {
+      .panels { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    }
+    queue-panel { display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ---- episode panel (left) ---- */
+    .ep-panel { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #334155; }
+
+    /* shared column grid: title | feed | date | duration | save | actions */
+    .ep-grid { display: grid; grid-template-columns: 1fr 1fr 6.5em 4em 7em 5.5em; }
+
+    .ep-header { flex-shrink: 0; background: #0f172a; border-bottom: 1px solid #334155; }
+    .ep-cols   { border-bottom: 1px solid #1e293b; }
+    .col-hd {
+      padding: 0.3rem 0.4rem; font-size: 0.8em; font-weight: 600; color: #94a3b8;
+      display: flex; align-items: center; gap: 0.25em;
+      cursor: pointer; user-select: none;
+    }
+    .col-hd:hover  { color: #f1f5f9; }
+    .col-hd.sorted { color: #60a5fa; }
+    .col-hd-static { cursor: default; padding: 0.3rem 0.4rem; font-size: 0.8em; font-weight: 600; color: #94a3b8; }
+    .ep-search { padding: 0.25rem 0; gap: 0 0.25rem; align-items: center; }
+    .ep-search input {
+      font-size: 0.8em; padding: 0.2em 0.35em; margin: 0 0.25rem;
+      border: 1px solid #334155; border-radius: 3px;
+      background: #1e293b; color: #f1f5f9; width: calc(100% - 0.5rem);
+    }
+    .ep-search input::placeholder { color: #475569; }
+
+    .ep-count { flex-shrink: 0; padding: 0.25rem 0.5rem; font-size: 0.75em; color: #475569; }
+    .ep-rows  { flex: 1; overflow-y: auto; }
+
+    /* group section header (grouped-by-feed mode) */
+    .ep-group-hd {
+      display: flex; align-items: center; gap: 0.45rem;
+      padding: 0.35rem 0.6rem; background: #1e293b; cursor: pointer;
+      font-size: 0.83em; font-weight: 600; color: #94a3b8;
+      border-bottom: 1px solid #334155; user-select: none;
+    }
+    .ep-group-hd:hover { background: #334155; color: #f1f5f9; }
+    .grp-count { font-weight: normal; color: #475569; }
+
+    /* episode row */
+    .ep-row { border-bottom: 1px solid #1e293b; font-size: 0.85em; user-select: none; }
+    .ep-row:hover .ep-cell,
+    .ep-row:hover .ep-save,
+    .ep-row:hover .ep-actions { background: #1e293b; }
+    .ep-row.selected .ep-cell,
+    .ep-row.selected .ep-save,
+    .ep-row.selected .ep-actions { background: rgba(96,165,250,0.12); }
+    .ep-cell {
+      padding: 0.3rem 0.4rem; overflow: hidden;
+      white-space: nowrap; text-overflow: ellipsis; align-self: center;
+    }
+    .ep-cell.date { color: #64748b; font-size: 0.82em; }
+    .ep-cell.dur  { color: #64748b; font-variant-numeric: tabular-nums; font-size: 0.9em; }
+    .ep-offline   { color: #60a5fa; font-size: 0.75em; margin-left: 0.3em; }
+
+    /* save button cell */
+    .ep-save { display: flex; align-items: center; padding: 0 0.3rem; }
+    .save-btn {
+      font-size: 0.75em; padding: 0.2em 0.45em; white-space: nowrap;
+      border: 1px solid #475569; border-radius: 3px;
+      background: #1e293b; color: #94a3b8; cursor: pointer;
+    }
+    .save-btn:hover { background: #334155; color: #f1f5f9; }
+    .save-btn.saved { border-color: #22c55e; color: #86efac; background: #14532d; }
+    .save-btn.err   { border-color: #ef4444; color: #fca5a5; }
+
+    /* download progress (full-width row below the episode row) */
+    .dl-row {
+      display: flex; align-items: center; gap: 0.4rem;
+      padding: 0.2rem 0.4rem; background: #1e293b;
+      font-size: 0.75em; color: #94a3b8; border-bottom: 1px solid #334155;
+    }
+    .dl-bar-wrap { flex: 1; height: 5px; background: #334155; border-radius: 3px; overflow: hidden; }
+    .dl-bar { height: 100%; background: #3b82f6; border-radius: 3px; transition: width .2s; min-width: 3px; }
+    .dl-bar.indeterminate { width: 40% !important; animation: dl-pulse 1.2s ease-in-out infinite; }
+    @keyframes dl-pulse {
+      0%   { margin-left: 0%;  }
+      50%  { margin-left: 60%; }
+      100% { margin-left: 0%;  }
+    }
+
+    /* action buttons */
+    .ep-actions { display: flex; gap: 2px; align-items: center; padding: 0 0.2rem; }
+    .act-btn {
+      font-size: 0.82em; padding: 0.35em 0.55em;
+      background: #334155; border: none; color: #f1f5f9;
+      border-radius: 3px; cursor: pointer; line-height: 1;
+    }
+    .act-btn:hover { background: #475569; }
+    .act-btn.play-now { background: #1d4ed8; }
+    .act-btn.play-now:hover { background: #2563eb; }
+
+    .empty { padding: 1.5rem 1rem; color: #475569; font-size: 0.9em; }
+    .loading-note { color: #475569; font-style: italic; }
+    .sel-info { color: #7dd3fc; }
+    .sel-clear {
+      margin-left: 0.3em; font-size: 0.85em;
+      background: none; border: none; color: #94a3b8; cursor: pointer; padding: 0;
+    }
+    .sel-clear:hover { color: #f1f5f9; }
   `;
 
-  @state() private _feeds:       PodcastFeed[]     = [];
-  @state() private _showAddForm  = false;
-  @state() private _addUrl       = "";
-  @state() private _adding       = false;
-  @state() private _addError     = "";
-  @state() private _selected:    PodcastDetail | null = null;
-  @state() private _loadingFeed  = false;
-  @state() private _playlist:    PodcastEpisode[] = [];
-  @state() private _currentIndex = -1;
-  @state() private _playing      = false;
-  @state() private _elapsed      = 0;
-  @state() private _duration     = 0;
-  @state() private _volume       = 1.0;
-  @state() private _audioError   = "";
-  // audio_url → local_url for all saved episodes
-  @state() private _saved:       Map<string, string> = new Map();
-  // audio_url → in-progress download state
-  @state() private _downloads:   Map<string, DownloadState> = new Map();
-  @state() private _quota:            QuotaInfo | null = null;
-  @state() private _normalizeOn      = false;
-  @state() private _normalizeBlocked = false;
+  // ---- feed + episode state ----
+  @state() private _feeds:        PodcastFeed[]             = [];
+  @state() private _feedDetails:  Map<string, PodcastDetail> = new Map();
+  @state() private _loadingFeeds: Set<string>               = new Set();
+  @state() private _showForm      = false;
+  @state() private _addUrl        = "";
+  @state() private _adding        = false;
+  @state() private _addError      = "";
 
-  private readonly _audio      = new Audio();
-  private readonly _normalizer = new VolumeNormalizer();
-  // Keep EventSource refs so we can close them on disconnect.
+  // ---- sort / filter / grouping ----
+  @state() private _sortCol:        SortCol = "date";
+  @state() private _sortDir:        1 | -1  = -1;   // newest first by default
+  @state() private _fTitle  = "";
+  @state() private _fFeed   = "";
+  @state() private _fDate   = "";
+  @state() private _groupByFeed        = false;
+  @state() private _collapsedFeeds: Set<string> = new Set();
+
+  // ---- selection ----
+  @state() private _selected: Set<string> = new Set();   // episode guids
+  private _anchor: string | null = null;
+
+  // ---- offline save ----
+  @state() private _saved:     Map<string, string>       = new Map();
+  @state() private _downloads: Map<string, DownloadState> = new Map();
+  @state() private _quota:     QuotaInfo | null           = null;
+
   private readonly _eventSources = new Map<string, EventSource>();
 
-  private readonly _onBusCmd = (e: Event): void => {
-    const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
-    if (!("serviceId" in cmd) || cmd.serviceId !== "podcasts") return;
-    switch (cmd.type) {
-      case "Play":      void this._audio.play(); break;
-      case "Pause":     this._audio.pause();     break;
-      case "Stop":      this._audio.pause(); this._audio.currentTime = 0; break;
-      case "Next":      void this._playNext();   break;
-      case "Previous":  this._playPrev();        break;
-      case "SetVolume": this._volume = cmd.volume; this._audio.volume = cmd.volume; break;
+  private readonly _onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === "Escape" && this._selected.size > 0) {
+      this._selected = new Set(); this._anchor = null;
+      this._emitSelectionState();
     }
   };
 
   override connectedCallback(): void {
     super.connectedCallback();
-    playerBus.addEventListener("cmd", this._onBusCmd);
-    this._audio.addEventListener("timeupdate", () => {
-      this._elapsed  = this._audio.currentTime;
-      this._duration = isFinite(this._audio.duration) ? this._audio.duration : 0;
-    });
-    this._audio.addEventListener("play",  () => { this._playing = true;  void this._notifyPlayer("Play");  });
-    this._audio.addEventListener("pause", () => { this._playing = false; void this._notifyPlayer("Pause"); });
-    this._audio.addEventListener("ended", () => { void this._playNext(); });
-    this._audio.addEventListener("error", () => {
-      const err        = this._audio.error;
-      this._audioError = err ? `Audio error ${err.code}: ${err.message}` : "Unknown audio error";
-      this._playing    = false;
-    });
-    void this._fetchFeeds();
-    void this._fetchSaved();
-    void this._fetchQuota();
+    document.addEventListener("keydown", this._onKeyDown);
+    void this._loadAll();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
-    playerBus.removeEventListener("cmd", this._onBusCmd);
-    this._audio.pause();
-    this._audio.src = "";
-    this._normalizer.disconnect();
-    // Close any open SSE connections.
+    document.removeEventListener("keydown", this._onKeyDown);
     for (const es of this._eventSources.values()) es.close();
     this._eventSources.clear();
+    playerBus.dispatchEvent(new CustomEvent<SelectionStateEvent>("selection-state", {
+      detail: { items: [], source: "podcasts" },
+    }));
   }
 
-  // ---- feeds ----
+  // ---- data loading ----
+
+  private async _loadAll(): Promise<void> {
+    await Promise.all([this._fetchFeeds(), this._fetchSaved(), this._fetchQuota()]);
+  }
 
   private async _fetchFeeds(): Promise<void> {
     try {
       const r = await fetch("/api/podcasts/feeds");
-      if (r.ok) this._feeds = await r.json() as PodcastFeed[];
+      if (!r.ok) return;
+      this._feeds = await r.json() as PodcastFeed[];
+      // Load episodes for all feeds in parallel; skip already-cached ones.
+      await Promise.all(this._feeds.map((f) => this._loadFeedEpisodes(f.url)));
     } catch { /* backend unavailable */ }
   }
 
-  private async _addFeed(): Promise<void> {
-    const url = this._addUrl.trim();
-    if (!url) return;
-    this._adding   = true;
-    this._addError = "";
+  private async _loadFeedEpisodes(feedUrl: string, force = false): Promise<void> {
+    if (!force && this._feedDetails.has(feedUrl)) return;
+    this._loadingFeeds = new Set(this._loadingFeeds).add(feedUrl);
     try {
-      const r = await fetch("/api/podcasts/feeds", {
-        method: "POST",
-        headers: { "content-type": "application/json", ...getCsrfHeaders() },
-        body: JSON.stringify({ url }),
-      });
-      const data = await r.json() as PodcastDetail & { error?: string };
-      if (!r.ok) {
-        this._addError = data.error ?? "Unknown error";
-      } else {
-        this._addUrl      = "";
-        this._showAddForm = false;
-        await this._fetchFeeds();
-        this._selected = data;
+      const r = await fetch(`/api/podcasts/episodes?url=${encodeURIComponent(feedUrl)}`);
+      if (r.ok) {
+        this._feedDetails = new Map(this._feedDetails).set(feedUrl, await r.json() as PodcastDetail);
       }
-    } catch { this._addError = "Network error"; }
-    finally   { this._adding = false; }
-  }
-
-  private async _removeFeed(url: string, e: Event): Promise<void> {
-    e.stopPropagation();
-    await fetch("/api/podcasts/feeds/remove", {
-      method: "POST",
-      headers: { "content-type": "application/json", ...getCsrfHeaders() },
-      body: JSON.stringify({ url }),
-    });
-    if (this._selected?.url === url) this._selected = null;
-    await this._fetchFeeds();
-  }
-
-  private async _selectFeed(feed: PodcastFeed): Promise<void> {
-    if (this._selected?.url === feed.url) { this._selected = null; return; }
-    this._loadingFeed = true;
-    try {
-      const r = await fetch(`/api/podcasts/episodes?url=${encodeURIComponent(feed.url)}`);
-      if (r.ok) this._selected = await r.json() as PodcastDetail;
     } catch { /* backend unavailable */ }
-    finally { this._loadingFeed = false; }
+    finally {
+      const s = new Set(this._loadingFeeds); s.delete(feedUrl); this._loadingFeeds = s;
+    }
   }
 
-  // ---- offline save ----
+  private async _refreshAll(): Promise<void> {
+    this._feedDetails = new Map();
+    await Promise.all(this._feeds.map((f) => this._loadFeedEpisodes(f.url, true)));
+  }
 
   private async _fetchSaved(): Promise<void> {
     try {
@@ -283,383 +345,462 @@ export class PodcastsPlayerElement extends PlayerBase {
     } catch { /* backend unavailable */ }
   }
 
-  private async _saveEpisode(ep: PodcastEpisode, e: Event): Promise<void> {
-    e.stopPropagation();
-    const feedUrl = this._selected?.url ?? "";
+  // ---- feed management ----
 
+  private async _addFeed(): Promise<void> {
+    const url = this._addUrl.trim();
+    if (!url) return;
+    this._adding   = true;
+    this._addError = "";
+    try {
+      const r = await fetch("/api/podcasts/feeds", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({ url }),
+      });
+      const data = await r.json() as PodcastDetail & { error?: string };
+      if (!r.ok) {
+        this._addError = data.error ?? "Unknown error";
+      } else {
+        this._addUrl   = "";
+        this._showForm = false;
+        this._feedDetails = new Map(this._feedDetails).set(url, data);
+        await this._fetchFeeds();
+      }
+    } catch { this._addError = "Network error"; }
+    finally   { this._adding = false; }
+  }
+
+  private async _removeFeed(url: string, e: Event): Promise<void> {
+    e.stopPropagation();
+    await fetch("/api/podcasts/feeds/remove", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...getCsrfHeaders() },
+      body: JSON.stringify({ url }),
+    });
+    const fd = new Map(this._feedDetails); fd.delete(url); this._feedDetails = fd;
+    this._feeds = this._feeds.filter((f) => f.url !== url);
+  }
+
+  // ---- offline save ----
+
+  private async _saveEpisode(ep: EpisodeEx, e: Event): Promise<void> {
+    e.stopPropagation();
     const r = await fetch("/api/podcasts/episodes/save", {
       method: "POST",
       headers: { "content-type": "application/json", ...getCsrfHeaders() },
-      body: JSON.stringify({ feed_url: feedUrl, episode: ep }),
+      body: JSON.stringify({ feed_url: ep.feedUrl, episode: ep }),
     });
     const data = await r.json() as {
       task_id?: string; already_saved?: boolean; local_url?: string; error?: string
     };
-
     if (!r.ok) {
-      // Show error inline on the episode row.
       this._downloads = new Map(this._downloads).set(ep.url, {
         received: 0, total: 0, error: data.error ?? `HTTP ${r.status}`,
       });
       return;
     }
-
     if (data.already_saved && data.local_url) {
-      this._saved = new Map(this._saved).set(ep.url, data.local_url);
-      return;
+      this._saved = new Map(this._saved).set(ep.url, data.local_url); return;
     }
-
     if (!data.task_id) return;
 
-    // Subscribe to SSE progress stream.
     this._downloads = new Map(this._downloads).set(ep.url, { received: 0, total: 0 });
     const es = new EventSource(`/api/podcasts/episodes/save/${data.task_id}`);
     this._eventSources.set(ep.url, es);
-
     es.onmessage = (ev: MessageEvent) => {
       const msg = JSON.parse(ev.data as string) as {
         type: string; received?: number; total?: number; local_url?: string; message?: string
       };
       if (msg.type === "progress") {
         this._downloads = new Map(this._downloads).set(ep.url, {
-          received: msg.received ?? 0,
-          total:    msg.total    ?? 0,
+          received: msg.received ?? 0, total: msg.total ?? 0,
         });
       } else if (msg.type === "done" && msg.local_url) {
-        es.close();
-        this._eventSources.delete(ep.url);
-        const dl = new Map(this._downloads);
-        dl.delete(ep.url);
-        this._downloads = dl;
+        es.close(); this._eventSources.delete(ep.url);
+        const dl = new Map(this._downloads); dl.delete(ep.url); this._downloads = dl;
         this._saved = new Map(this._saved).set(ep.url, msg.local_url);
         void this._fetchQuota();
       } else if (msg.type === "error") {
-        es.close();
-        this._eventSources.delete(ep.url);
+        es.close(); this._eventSources.delete(ep.url);
         this._downloads = new Map(this._downloads).set(ep.url, {
           received: 0, total: 0, error: msg.message ?? "Download failed",
         });
       }
     };
-
     es.onerror = () => {
-      es.close();
-      this._eventSources.delete(ep.url);
+      es.close(); this._eventSources.delete(ep.url);
       this._downloads = new Map(this._downloads).set(ep.url, {
         received: 0, total: 0, error: "Connection lost",
       });
     };
   }
 
-  private async _unsaveEpisode(ep: PodcastEpisode, e: Event): Promise<void> {
+  private async _unsaveEpisode(ep: EpisodeEx, e: Event): Promise<void> {
     e.stopPropagation();
-    const feedUrl = this._selected?.url ?? "";
     await fetch("/api/podcasts/episodes/save", {
       method: "DELETE",
       headers: { "content-type": "application/json", ...getCsrfHeaders() },
-      body: JSON.stringify({ audio_url: ep.url, feed_url: feedUrl }),
+      body: JSON.stringify({ audio_url: ep.url, feed_url: ep.feedUrl }),
     });
-    const saved = new Map(this._saved);
-    saved.delete(ep.url);
-    this._saved = saved;
+    const saved = new Map(this._saved); saved.delete(ep.url); this._saved = saved;
     void this._fetchQuota();
   }
 
-  // ---- playback ----
+  // ---- queue ----
 
-  private _playAt(index: number): void {
-    if (index < 0 || index >= this._playlist.length) return;
-    this._currentIndex = index;
-    this._audioError   = "";
-    const ep           = this._playlist[index];
-    // Use the local URL if the episode has been saved offline.
-    const localUrl     = this._saved.get(ep.url);
-    const src          = localUrl ?? ep.url;
-    this._audio.src    = src;
-    this._audio.volume = this._volume;
-    void this._audio.play();
-    // Re-evaluate normalize availability: CDN URLs are cross-origin → blocked.
-    const sameOrigin = VolumeNormalizer.isSameOrigin(this._audio.src);
-    this._normalizeBlocked = !sameOrigin;
-    if (!sameOrigin) this._normalizer.disable();
+  /** Use the local URL when the episode is saved offline — same-origin, normalizer-compatible. */
+  private _toQueueItem(ep: EpisodeEx): QueueItem {
+    return {
+      serviceId: "podcasts",
+      trackId:   ep.guid,
+      audioUrl:  this._saved.get(ep.url) ?? ep.url,
+      artUrl:    ep.feedImage ?? "",
+      title:     ep.title,
+      artist:    "",
+      album:     ep.feedTitle,
+      duration:  ep.duration,
+    };
   }
 
-  private _connectNormalizer(): void {
-    // Cross-origin check MUST happen before connect(): Chrome permanently captures
-    // the audio element on createMediaElementSource (even when it throws), routing
-    // its output to the now-dead AudioContext → permanent silence if we proceed.
-    if (!VolumeNormalizer.isSameOrigin(this._audio.src)) {
-      this._normalizeBlocked = true;
-      this._normalizer.disable();
-      return;
-    }
-    if (this._normalizer.blocked) { this._normalizeBlocked = true; return; }
-    const ok = this._normalizer.connect(this._audio);
-    this._normalizeBlocked = !ok;
-    if (ok && this._normalizeOn) this._normalizer.enable();
+  // ---- selection / drag ----
+
+  private _emitSelectionState(): void {
+    const byGuid = new Map(this._allEpisodes.map(ep => [ep.guid, ep]));
+    const items: QueueItem[] = [...this._selected]
+      .map(guid => byGuid.get(guid))
+      .filter((ep): ep is EpisodeEx => ep !== undefined)
+      .map(ep => this._toQueueItem(ep));
+    playerBus.dispatchEvent(new CustomEvent<SelectionStateEvent>("selection-state", {
+      detail: { items, source: "podcasts" },
+    }));
   }
 
-  private _toggleNormalize(): void {
-    if (this._normalizeBlocked) return;
-    this._normalizeOn = !this._normalizeOn;
-    if (this._normalizeOn) {
-      this._connectNormalizer();
-      this._normalizer.enable();
+  private _onTrackClick(e: MouseEvent, guid: string, orderedGuids: string[]): void {
+    if (e.shiftKey && this._anchor !== null) {
+      const ai = orderedGuids.indexOf(this._anchor);
+      const ki = orderedGuids.indexOf(guid);
+      if (ai >= 0 && ki >= 0) {
+        const lo = Math.min(ai, ki); const hi = Math.max(ai, ki);
+        const s = new Set(this._selected);
+        for (let i = lo; i <= hi; i++) s.add(orderedGuids[i]);
+        this._selected = s;
+      }
+    } else if (e.ctrlKey || e.metaKey) {
+      const s = new Set(this._selected);
+      if (s.has(guid)) s.delete(guid); else s.add(guid);
+      this._selected = s;
+      this._anchor = guid;
     } else {
-      this._normalizer.disable();
+      this._selected = new Set([guid]);
+      this._anchor = guid;
     }
+    this._emitSelectionState();
   }
 
-  private _playEpisode(ep: PodcastEpisode, playlist: PodcastEpisode[]): void {
-    this._playlist = playlist;
-    this._playAt(playlist.findIndex((e) => e.guid === ep.guid));
+  private _onDragStart(e: DragEvent, ep: EpisodeEx, allEps: EpisodeEx[]): void {
+    const isSel  = this._selected.has(ep.guid);
+    const source = isSel && this._selected.size > 0
+      ? allEps.filter(t => this._selected.has(t.guid))
+      : [ep];
+    e.dataTransfer!.effectAllowed = "copy";
+    e.dataTransfer!.setData("queue-items-json", JSON.stringify(source.map(t => this._toQueueItem(t))));
   }
 
-  private async _playNext(): Promise<void> { this._playAt(this._currentIndex + 1); }
+  // ---- filter / sort / group ----
 
-  private _playPrev(): void {
-    if (this._audio.currentTime > 3) {
-      this._audio.currentTime = 0;
-    } else {
-      this._playAt(this._currentIndex - 1);
+  /** Flat list of all episodes enriched with their feed metadata. */
+  private get _allEpisodes(): EpisodeEx[] {
+    const out: EpisodeEx[] = [];
+    for (const [url, detail] of this._feedDetails) {
+      for (const ep of detail.episodes)
+        out.push({ ...ep, feedUrl: url, feedTitle: detail.title, ...(detail.image ? { feedImage: detail.image } : {}) });
     }
+    return out;
   }
 
-  private _onSeek(e: Event): void {
-    this._audio.currentTime = parseFloat((e.target as HTMLInputElement).value);
+  /** Apply text filters and sort. */
+  private _buildDisplay(): EpisodeEx[] {
+    const q  = (v: string) => v.trim().toLowerCase();
+    const ft = q(this._fTitle);
+    const ff = q(this._fFeed);
+    const fd = q(this._fDate);
+
+    const base = this._allEpisodes.filter((ep) => {
+      if (ft && !ep.title.toLowerCase().includes(ft))     return false;
+      if (ff && !ep.feedTitle.toLowerCase().includes(ff)) return false;
+      if (fd && !ep.pub_date.toLowerCase().includes(fd))  return false;
+      return true;
+    });
+
+    const col = this._sortCol;
+    const dir = this._sortDir;
+    return [...base].sort((a, b) => {
+      if (col === "duration") return (a.duration - b.duration) * dir;
+      const va = col === "title" ? a.title.toLowerCase()
+               : col === "feed"  ? a.feedTitle.toLowerCase()
+               : a.pub_date;
+      const vb = col === "title" ? b.title.toLowerCase()
+               : col === "feed"  ? b.feedTitle.toLowerCase()
+               : b.pub_date;
+      return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+    });
   }
 
-  private _onVolume(e: Event): void {
-    this._volume = parseInt((e.target as HTMLInputElement).value, 10) / 100;
-    this._audio.volume = this._volume;
+  private _setSort(col: SortCol): void {
+    if (this._sortCol === col) this._sortDir = (this._sortDir === 1 ? -1 : 1) as 1 | -1;
+    // Default direction: date → newest first; everything else → A-Z / shortest first.
+    else { this._sortCol = col; this._sortDir = col === "date" ? -1 : 1; }
   }
 
-  private async _notifyPlayer(type: string): Promise<void> {
-    // Post current playback state to backend for MPRIS bridge.
-    const ep = this._playlist[this._currentIndex];
-    if (!ep) return;
-    try {
-      await fetch("/api/player/command", {
-        method: "POST",
-        headers: { "content-type": "application/json", ...getCsrfHeaders() },
-        body: JSON.stringify({
-          type,
-          service:  "podcasts",
-          track_id: ep.guid,
-          title:    ep.title,
-          artist:   "",
-          album:    this._selected?.title ?? "",
-          art_url:  this._selected?.image ?? "",
-          duration: ep.duration,
-          position: this._audio.currentTime,
-          volume:   this._volume,
-        }),
-      });
-    } catch { /* backend unavailable */ }
-  }
-
-  // ---- helpers ----
-
-  private _fmt(seconds: number): string {
-    if (!seconds || !isFinite(seconds)) return "--:--";
-    const m = String(Math.floor(seconds / 60)).padStart(2, "0");
-    const s = String(Math.floor(seconds % 60)).padStart(2, "0");
-    return `${m}:${s}`;
-  }
-
-  private get _currentEp(): PodcastEpisode | null {
-    return this._currentIndex >= 0 ? (this._playlist[this._currentIndex] ?? null) : null;
-  }
-
-  // ---- episode row ----
-
-  private _renderEpisode(ep: PodcastEpisode, episodes: PodcastEpisode[], currentGuid: string) {
-    const isSaved    = this._saved.has(ep.url);
-    const dl         = this._downloads.get(ep.url);
-    const isDownloading = dl !== undefined && !dl.error;
-
-    // Save/unsave action button.
-    let saveBtn: TemplateResult | typeof nothing = nothing;
-    if (dl?.error) {
-      saveBtn = html`
-        <button class="ep-save-btn error" title=${dl.error}
-                @click=${(e: Event) => void this._saveEpisode(ep, e)}>
-          ${t("podcasts.save-error")} ↺
-        </button>`;
-    } else if (isDownloading) {
-      saveBtn = html`<span class="ep-save-btn">${t("podcasts.saving")}</span>`;
-    } else if (isSaved) {
-      saveBtn = html`
-        <button class="ep-save-btn saved" title=${t("podcasts.unsave")}
-                @click=${(e: Event) => void this._unsaveEpisode(ep, e)}>
-          ✓ ${t("podcasts.saved")}
-        </button>`;
-    } else {
-      saveBtn = html`
-        <button class="ep-save-btn" title=${t("podcasts.save")}
-                @click=${(e: Event) => void this._saveEpisode(ep, e)}>
-          ↓ ${t("podcasts.save")}
-        </button>`;
-    }
-
-    // Download progress bar (shown below the row while downloading).
-    let progressBar: TemplateResult | typeof nothing = nothing;
-    if (isDownloading && dl) {
-      const pct  = dl.total > 0 ? Math.round((dl.received / dl.total) * 100) : 0;
-      const label = dl.total > 0
-        ? `${_fmtBytes(dl.received)} / ${_fmtBytes(dl.total)} (${pct}%)`
-        : _fmtBytes(dl.received);
-      const indeterminate = dl.total === 0;
-      progressBar = html`
-        <div class="dl-progress">
-          <div class="dl-bar-wrap">
-            <div class="dl-bar ${indeterminate ? "indeterminate" : ""}"
-                 style="width: ${indeterminate ? "40" : pct}%"></div>
-          </div>
-          <span>${label}</span>
-        </div>`;
-    }
-
-    return html`
-      <div class="ep-row ${ep.guid === currentGuid && this._playing ? "playing" : ""}">
-        <div class="ep-play" @click=${() => this._playEpisode(ep, episodes)}>
-          <span class="ep-title">${ep.title}${isSaved ? html` <span class="ep-offline-badge">⊙</span>` : nothing}</span>
-          <span class="ep-date">${ep.pub_date}</span>
-          <span class="ep-dur">${this._fmt(ep.duration)}</span>
-        </div>
-        <div class="ep-actions">${saveBtn}</div>
-      </div>
-      ${progressBar}
-    `;
-  }
-
-  // ---- quota pill ----
-
-  private _renderQuota() {
-    if (!this._quota) return nothing;
-    const { used_bytes, limit_bytes } = this._quota;
-    if (limit_bytes === 0) return nothing;  // unlimited
-    const pct = Math.min(100, Math.round((used_bytes / limit_bytes) * 100));
-    const cls = pct >= 90 ? "danger" : pct >= 70 ? "warning" : "";
-    return html`
-      <div class="quota-pill" title="${t("quota.label")}">
-        <div class="quota-bar">
-          <div class="quota-fill ${cls}" style="width: ${pct}%"></div>
-        </div>
-        <span>${_fmtBytes(used_bytes)} ${t("quota.of")} ${_fmtBytes(limit_bytes)}</span>
-      </div>`;
+  private _toggleGroup(feedUrl: string): void {
+    const s = new Set(this._collapsedFeeds);
+    if (s.has(feedUrl)) s.delete(feedUrl); else s.add(feedUrl);
+    this._collapsedFeeds = s;
   }
 
   // ---- rendering ----
 
-  override render() {
-    const episodes    = this._selected?.episodes ?? [];
-    const currentGuid = this._currentEp?.guid    ?? "";
+  private _renderColHeader(col: SortCol, label: string): TemplateResult {
+    const sorted = this._sortCol === col;
+    const arrow  = sorted ? (this._sortDir === 1 ? " ↑" : " ↓") : "";
+    return html`
+      <div class="col-hd ${sorted ? "sorted" : ""}" @click=${() => this._setSort(col)}>
+        ${label}${arrow}
+      </div>`;
+  }
+
+  private _renderEpisode(ep: EpisodeEx, allEps: EpisodeEx[]): TemplateResult {
+    const isSaved = this._saved.has(ep.url);
+    const dl      = this._downloads.get(ep.url);
+    const isSel   = this._selected.has(ep.guid);
+    // When the clicked row is already selected, act buttons apply to the full selection.
+    const effective = isSel && this._selected.size > 0
+      ? allEps.filter(t => this._selected.has(t.guid))
+      : [ep];
+    const items   = () => effective.map(t => this._toQueueItem(t));
+    const allGuids = allEps.map(t => t.guid);
+
+    let saveBtn: TemplateResult;
+    if (dl?.error) {
+      saveBtn = html`<button class="save-btn err" title=${dl.error}
+                             @click=${(e: Event) => void this._saveEpisode(ep, e)}>
+                       ${t("podcasts.save-error")} ↺
+                     </button>`;
+    } else if (dl) {
+      saveBtn = html`<span class="save-btn">${t("podcasts.saving")}</span>`;
+    } else if (isSaved) {
+      saveBtn = html`<button class="save-btn saved" title=${t("podcasts.unsave")}
+                             @click=${(e: Event) => void this._unsaveEpisode(ep, e)}>
+                       ✓ ${t("podcasts.saved")}
+                     </button>`;
+    } else {
+      saveBtn = html`<button class="save-btn"
+                             @click=${(e: Event) => void this._saveEpisode(ep, e)}>
+                       ↓ ${t("podcasts.save")}
+                     </button>`;
+    }
 
     return html`
-      <h3>${t("service.podcasts")}</h3>
+      <div class="ep-row ep-grid ${isSel ? "selected" : ""}"
+           draggable="true"
+           @click=${(e: MouseEvent) => this._onTrackClick(e, ep.guid, allGuids)}
+           @dragstart=${(e: DragEvent) => this._onDragStart(e, ep, allEps)}>
+        <div class="ep-cell">
+          ${ep.title}${isSaved ? html`<span class="ep-offline">⊙</span>` : nothing}
+        </div>
+        <div class="ep-cell">${ep.feedTitle}</div>
+        <div class="ep-cell date">${ep.pub_date}</div>
+        <div class="ep-cell dur">${fmtSec(ep.duration)}</div>
+        <div class="ep-save">${saveBtn}</div>
+        <div class="ep-actions">
+          <button class="act-btn" title="Append to queue"
+                  @click=${(e: Event) => { e.stopPropagation(); queue.add(items()); }}>+</button>
+          <button class="act-btn" title="Play after current"
+                  @click=${(e: Event) => { e.stopPropagation(); queue.insertNext(items()); }}>⏭</button>
+          <button class="act-btn play-now" title="Play now"
+                  @click=${(e: Event) => { e.stopPropagation(); queue.playNow(items()); }}>▶</button>
+        </div>
+      </div>
+      ${dl && !dl.error ? this._renderDlProgress(dl) : nothing}
+    `;
+  }
 
-      <!-- toolbar + quota -->
-      <div class="toolbar">
-        <button @click=${() => { this._showAddForm = !this._showAddForm; this._addError = ""; }}>
-          ${t("podcasts.add")}
+  private _renderDlProgress(dl: DownloadState): TemplateResult {
+    const pct   = dl.total > 0 ? Math.round((dl.received / dl.total) * 100) : 0;
+    const label = dl.total > 0
+      ? `${fmtBytes(dl.received)} / ${fmtBytes(dl.total)} (${pct}%)`
+      : fmtBytes(dl.received);
+    return html`
+      <div class="dl-row">
+        <div class="dl-bar-wrap">
+          <div class="dl-bar ${dl.total === 0 ? "indeterminate" : ""}"
+               style="width: ${dl.total === 0 ? "40" : pct}%"></div>
+        </div>
+        <span>${label}</span>
+      </div>`;
+  }
+
+  /**
+   * Grouped view: one collapsible section per feed, groups sorted alphabetically.
+   * Groups preserve the sorted order of episodes within each section.
+   */
+  private _renderGrouped(episodes: EpisodeEx[]): TemplateResult {
+    // Collect groups while preserving intra-group episode order from _buildDisplay.
+    const groups = new Map<string, EpisodeEx[]>();
+    for (const ep of episodes) {
+      const arr = groups.get(ep.feedUrl) ?? [];
+      arr.push(ep);
+      groups.set(ep.feedUrl, arr);
+    }
+    // Sort group headers alphabetically by feed title.
+    const sorted = [...groups.entries()].sort(([, a], [, b]) => {
+      const ta = a[0]?.feedTitle.toLowerCase() ?? "";
+      const tb = b[0]?.feedTitle.toLowerCase() ?? "";
+      return ta < tb ? -1 : ta > tb ? 1 : 0;
+    });
+    return html`
+      ${sorted.map(([feedUrl, eps]) => {
+        const collapsed = this._collapsedFeeds.has(feedUrl);
+        const detail    = this._feedDetails.get(feedUrl);
+        return html`
+          <div class="ep-group-hd" @click=${() => this._toggleGroup(feedUrl)}>
+            ${collapsed ? "▶" : "▼"}
+            ${detail?.image ? html`<img class="feed-thumb" src=${detail.image} alt="" />` : nothing}
+            ${eps[0]?.feedTitle ?? feedUrl}
+            <span class="grp-count">(${eps.length})</span>
+          </div>
+          ${collapsed ? nothing : eps.map((ep) => this._renderEpisode(ep, episodes))}
+        `;
+      })}
+    `;
+  }
+
+  private _renderEpisodePanel(): TemplateResult {
+    if (this._feeds.length === 0) {
+      return html`<div class="empty">${t("podcasts.no-feeds")}</div>`;
+    }
+
+    const episodes = this._buildDisplay();
+    const total    = this._allEpisodes.length;
+    const loading  = this._loadingFeeds.size > 0;
+
+    const countLabel = total !== episodes.length
+      ? `${episodes.length} / ${total} episodes`
+      : `${total} episode${total !== 1 ? "s" : ""}`;
+    const selInfo = this._selected.size > 0
+      ? html` · <span class="sel-info">${this._selected.size} selected</span
+          ><button class="sel-clear" @click=${() => { this._selected = new Set(); this._anchor = null; this._emitSelectionState(); }}>✕</button>`
+      : nothing;
+
+    return html`
+      <div class="ep-header">
+        <div class="ep-cols ep-grid">
+          ${this._renderColHeader("title",    "Title")}
+          ${this._renderColHeader("feed",     "Feed")}
+          ${this._renderColHeader("date",     "Date")}
+          ${this._renderColHeader("duration", "Duration")}
+          <div class="col-hd-static">Offline</div>
+          <div></div>
+        </div>
+        <div class="ep-search ep-grid">
+          <input placeholder="Title…"  .value=${live(this._fTitle)}
+                 @input=${(e: Event) => { this._fTitle = (e.target as HTMLInputElement).value; }} />
+          <input placeholder="Feed…"   .value=${live(this._fFeed)}
+                 @input=${(e: Event) => { this._fFeed  = (e.target as HTMLInputElement).value; }} />
+          <input placeholder="Date…"   .value=${live(this._fDate)}
+                 @input=${(e: Event) => { this._fDate  = (e.target as HTMLInputElement).value; }} />
+          <div></div><div></div><div></div>
+        </div>
+      </div>
+
+      <div class="ep-count">
+        ${countLabel}${selInfo}${loading ? html` · <span class="loading-note">loading…</span>` : nothing}
+      </div>
+
+      <div class="ep-rows">
+        ${this._groupByFeed
+          ? this._renderGrouped(episodes)
+          : episodes.map((ep) => this._renderEpisode(ep, episodes))}
+      </div>
+    `;
+  }
+
+  private _renderQuota(): TemplateResult | typeof nothing {
+    if (!this._quota || this._quota.limit_bytes === 0) return nothing;
+    const { used_bytes, limit_bytes } = this._quota;
+    const pct = Math.min(100, Math.round((used_bytes / limit_bytes) * 100));
+    const cls = pct >= 90 ? "danger" : pct >= 70 ? "warning" : "";
+    return html`
+      <div class="quota-pill" title=${t("quota.label")}>
+        <div class="quota-bar"><div class="quota-fill ${cls}" style="width: ${pct}%"></div></div>
+        <span>${fmtBytes(used_bytes)} ${t("quota.of")} ${fmtBytes(limit_bytes)}</span>
+      </div>`;
+  }
+
+  private _renderFeedsBar(): TemplateResult {
+    return html`
+      <div class="feeds-bar">
+        <span class="feeds-label">${t("service.podcasts")}:</span>
+        ${this._feeds.map((f) => html`
+          <span style="display:inline-flex;align-items:center;gap:0.2rem;">
+            <span class="feed-chip">
+              ${f.image ? html`<img class="feed-thumb" src=${f.image} alt="" loading="lazy" />` : nothing}
+              ${f.title || f.url}
+              ${this._loadingFeeds.has(f.url) ? html`<span style="opacity:.5">…</span>` : nothing}
+            </span>
+            <button class="remove-btn" title=${t("podcasts.unsubscribe")}
+                    @click=${(e: Event) => void this._removeFeed(f.url, e)}>✕</button>
+          </span>
+        `)}
+        <button class="add-feed-btn"
+                @click=${() => { this._showForm = !this._showForm; this._addError = ""; }}>
+          + ${t("podcasts.add")}
+        </button>
+        <button class="btn" @click=${() => void this._refreshAll()}>↺</button>
+        <button class="btn ${this._groupByFeed ? "toggled" : ""}"
+                @click=${() => { this._groupByFeed = !this._groupByFeed; }}>
+          ⊞ ${this._groupByFeed ? "Grouped" : "Group"}
         </button>
         ${this._renderQuota()}
       </div>
+    `;
+  }
 
-      <!-- add feed form -->
-      ${this._showAddForm ? html`
-        <div class="add-form">
-          <h4>${t("podcasts.add")}</h4>
-          <label>
-            ${t("podcasts.feed-url")}
-            <input type="url" placeholder="https://example.com/feed.rss"
-                   .value=${this._addUrl}
-                   @input=${(e: Event) => { this._addUrl = (e.target as HTMLInputElement).value; }}
-                   @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") void this._addFeed(); }} />
-          </label>
-          ${this._addError ? html`<div class="audio-error">${this._addError}</div>` : nothing}
-          <div class="row">
-            <button ?disabled=${!this._addUrl.trim() || this._adding}
-                    @click=${() => void this._addFeed()}>
-              ${this._adding ? t("podcasts.adding") : t("podcasts.subscribe")}
-            </button>
-            <button @click=${() => { this._showAddForm = false; this._addError = ""; }}>
-              ${t("podcasts.cancel")}
-            </button>
-          </div>
+  private _renderAddForm(): TemplateResult {
+    return html`
+      <div class="add-form">
+        <h4>${t("podcasts.add")}</h4>
+        <label>
+          ${t("podcasts.feed-url")}
+          <input type="url" placeholder="https://example.com/feed.rss"
+                 .value=${this._addUrl}
+                 @input=${(e: Event) => { this._addUrl = (e.target as HTMLInputElement).value; }}
+                 @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") void this._addFeed(); }} />
+        </label>
+        ${this._addError ? html`<div class="error-strip">${this._addError}</div>` : nothing}
+        <div class="form-actions">
+          <button class="btn primary" ?disabled=${!this._addUrl.trim() || this._adding}
+                  @click=${() => void this._addFeed()}>
+            ${this._adding ? t("podcasts.adding") : t("podcasts.subscribe")}
+          </button>
+          <button class="btn" @click=${() => { this._showForm = false; this._addError = ""; }}>
+            ${t("podcasts.cancel")}
+          </button>
         </div>
-      ` : nothing}
+      </div>
+    `;
+  }
 
-      <!-- feed list -->
-      ${this._feeds.length === 0 && !this._showAddForm
-        ? html`<p class="empty">${t("podcasts.no-feeds")}</p>`
-        : html`
-          <div class="feed-list">
-            ${this._feeds.map((f) => html`
-              <div class="feed-row ${this._selected?.url === f.url ? "selected" : ""}"
-                   @click=${() => void this._selectFeed(f)}>
-                ${f.image
-                  ? html`<img class="feed-thumb" src=${f.image} alt="" loading="lazy" />`
-                  : html`<div class="feed-thumb-placeholder"></div>`}
-                <span class="feed-title">${f.title || f.url}</span>
-                <div class="feed-actions">
-                  <button @click=${(e: Event) => void this._removeFeed(f.url, e)}>
-                    ${t("podcasts.unsubscribe")}
-                  </button>
-                </div>
-              </div>
-            `)}
-          </div>
-        `}
+  override render() {
+    return html`
+      ${this._renderFeedsBar()}
+      ${this._showForm ? this._renderAddForm() : nothing}
 
-      <!-- episode list -->
-      ${this._loadingFeed ? html`<p class="empty">${t("podcasts.loading")}</p>` : nothing}
-      ${this._selected && !this._loadingFeed ? html`
-        ${episodes.length === 0
-          ? html`<p class="empty">${t("podcasts.no-episodes")}</p>`
-          : html`
-            <div class="episode-list">
-              ${episodes.map((ep) => this._renderEpisode(ep, episodes, currentGuid))}
-            </div>
-          `}
-      ` : nothing}
-
-      <!-- audio error -->
-      ${this._audioError ? html`<div class="audio-error">${this._audioError}</div>` : nothing}
-
-      <!-- now-playing panel -->
-      ${this._currentEp ? html`
-        <div class="now-playing">
-          <div class="np-title">${this._currentEp.title}</div>
-          <div class="np-sub">${this._selected?.title ?? ""}</div>
-          <input class="seek" type="range" min="0" max=${this._duration || 1}
-                 .value=${live(this._elapsed)} @change=${this._onSeek} />
-          <div class="np-sub">${this._fmt(this._elapsed)} / ${this._fmt(this._duration)}</div>
-          <div class="ctrls">
-            <button @click=${() => this._playPrev()}>${t("player.prev")}</button>
-            <button @click=${this._playing ? () => this._audio.pause() : () => void this._audio.play()}>
-              ${this._playing ? t("player.pause") : t("player.play")}
-            </button>
-            <button @click=${() => { this._audio.pause(); this._audio.currentTime = 0; }}>
-              ${t("player.stop")}
-            </button>
-            <button @click=${() => void this._playNext()}>${t("player.next")}</button>
-          </div>
-          <div class="vol">
-            <span>${t("player.volume")}</span>
-            <input type="range" min="0" max="100"
-                   .value=${live(Math.round(this._volume * 100))} @input=${this._onVolume} />
-            <button @click=${this._toggleNormalize}
-                    title=${this._normalizeBlocked ? t("player.normalize-blocked") : ""}
-                    ?disabled=${this._normalizeBlocked}>
-              ${this._normalizeBlocked
-                ? t("player.normalize-blocked")
-                : this._normalizeOn ? t("player.normalizing") : t("player.normalize")}
-            </button>
-          </div>
-        </div>
-      ` : nothing}
+      <div class="panels">
+        <div class="ep-panel">${this._renderEpisodePanel()}</div>
+        <queue-panel></queue-panel>
+      </div>
     `;
   }
 }
