@@ -36,6 +36,7 @@ export class DemoPlayerElement extends PlayerBase {
   // Handle footer transport commands targeting this service.
   private readonly _onBusCmd = (e: Event): void => {
     const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
+    if (cmd.type === "PauseAll") { this._pause(); return; }
     if (!("serviceId" in cmd) || cmd.serviceId !== "demo") return;
     switch (cmd.type) {
       case "Play":      this._play();  break;

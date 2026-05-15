@@ -4,6 +4,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import { ensureCsrfToken, getCsrfHeaders } from "./csrf.js";
 import { t } from "./i18n/i18n.js";
 import { PlayerBase } from "./player-base.js";
+import { dispatchPlayerCmd } from "./player-bus.js";
 import { USER_CHANGED_EVENT, currentUser, listUsers, setCurrentUser } from "./session.js";
 
 /** Possible lock states: hidden, showing locking message, fully locked. */
@@ -267,6 +268,8 @@ export class ScreenLockElement extends PlayerBase {
 
   private async _selectUser(name: string): Promise<void> {
     const prev = currentUser();
+    // Pause outgoing user's audio before handing the session to the new user.
+    if (name !== prev) dispatchPlayerCmd({ type: "PauseAll" });
     try {
       const attempt = async () => fetch("/api/session/login", {
         method: "POST",

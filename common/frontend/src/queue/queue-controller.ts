@@ -301,6 +301,7 @@ class QueueController extends EventTarget {
   /** Handle footer transport commands for the queue's currently-playing service. */
   private _onBusCmd(e: CustomEvent<PlayerBusCmd>): void {
     const cmd = e.detail;
+    if (cmd.type === "PauseAll")    { this.pause();   return; }
     if (cmd.type === "SuspendQueue") { this.suspend(); return; }
     // Only handle commands targeting the current item's service.
     const cur = this._items[this._index];

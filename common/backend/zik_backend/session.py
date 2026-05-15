@@ -11,6 +11,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from .admin_lock import DeviceLock, is_locked
+from .audio_arbiter import signal_active_user
 
 _DEMO_USERS = ["alice", "bob", "charlie"]
 # Hardcoded for demo only — real PAM auth on Target 2.
@@ -94,6 +95,7 @@ def make_session_router(sessions: dict, users: dict | None = None,
         sessions[sid].pop("locked", None)
         if audit is not None:
             audit.add(username, "login")
+        signal_active_user(username)
         return JSONResponse({"ok": True, "user": username, "is_admin": False})
 
     async def reauth(request: Request) -> JSONResponse:

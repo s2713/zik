@@ -180,6 +180,9 @@ export class SpotifyPlayerElement extends PlayerBase {
   private readonly _onBusCmd = (e: Event): void => {
     const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
     switch (cmd.type) {
+      case "PauseAll":
+        void this._command("Pause");
+        return;
       case "PlaySpotifyTrack":
         void this._playDelegated(cmd.uri);
         break;

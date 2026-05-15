@@ -322,6 +322,7 @@ export class RadioPlayerElement extends PlayerBase {
 
   private readonly _onBusCmd = (e: Event): void => {
     const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
+    if (cmd.type === "PauseAll") { this._audio.pause(); return; }
     if (!("serviceId" in cmd) || cmd.serviceId !== "radio") return;
     switch (cmd.type) {
       case "Play":  void this._audio.play(); break;

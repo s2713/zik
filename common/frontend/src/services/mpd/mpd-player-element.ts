@@ -252,6 +252,7 @@ export class MpdPlayerElement extends PlayerBase {
 
   private readonly _onBusCmd = (e: Event): void => {
     const cmd = (e as CustomEvent<PlayerBusCmd>).detail;
+    if (cmd.type === "PauseAll") { void this._pause(); return; }
     if (!("serviceId" in cmd) || cmd.serviceId !== "mpd") return;
     switch (cmd.type) {
       case "Play":      void this._resume();                                      break;

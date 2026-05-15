@@ -9,6 +9,7 @@ export type PlayerBusCmd =
   | { type: "Play" | "Pause" | "Stop" | "Next" | "Previous"; serviceId: string | null }
   | { type: "SetVolume"; volume: number; serviceId: string | null }  // volume: 0.0–1.0
   | { type: "SuspendQueue" }  // non-queueable service (e.g. MPD) is taking over audio
+  | { type: "PauseAll" }      // pause every active player regardless of serviceId (user switch)
   | { type: "PlaySpotifyTrack"; uri: string; serviceId: "spotify" };  // queue delegates spotify URI
 
 /** The bus itself; service players subscribe with addEventListener("cmd", …). */

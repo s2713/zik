@@ -340,7 +340,29 @@ if [[ -f "${PRIVHELP_DEST}" ]]; then
     info "setuid applied to zik-privhelp"
 fi
 
-# ---- step 8: maintainer GPG keys --------------------------------------------
+# ---- step 8: WirePlumber arbiter policy -------------------------------------
+#
+# Install the zik-arbiter Lua script and its WirePlumber conf drop-in so the
+# system audio arbiter enforces single-active-user routing at the PipeWire
+# level.  The backend signals the active user via pw-metadata; the Lua policy
+# reacts and mutes streams from non-active users.
+
+section "Installing WirePlumber arbiter policy"
+
+AUDIO_SRC="${REPO_ROOT}/common/audio"
+WP_SCRIPTS_DEST="${CHROOT}/usr/share/wireplumber/scripts/zik"
+WP_CONF_DEST="${CHROOT}/etc/wireplumber/wireplumber.conf.d"
+
+install -d -m 0755 "${WP_SCRIPTS_DEST}"
+install -m 0644 "${AUDIO_SRC}/zik-arbiter.lua" "${WP_SCRIPTS_DEST}/zik-arbiter.lua"
+
+install -d -m 0755 "${WP_CONF_DEST}"
+install -m 0644 "${AUDIO_SRC}/wireplumber.conf.d/50-zik-arbiter.conf" \
+    "${WP_CONF_DEST}/50-zik-arbiter.conf"
+
+info "WirePlumber arbiter policy installed"
+
+# ---- step 9: maintainer GPG keys --------------------------------------------
 #
 # Import all keys from .maintainers/keys/ into a dedicated keyring used by the
 # OTA updater to verify release artifact signatures.  If no keys are present
@@ -367,7 +389,7 @@ shopt -u nullglob
 
 info "imported ${KEY_COUNT} maintainer key file(s) into ${ZIK_KEYRING}"
 
-# ---- step 9: greetd + kiosk config ------------------------------------------
+# ---- step 10: greetd + kiosk config ------------------------------------------
 
 section "Configuring greetd"
 
@@ -377,7 +399,7 @@ install -m 0644 "${OVERRIDES_DIR}/greetd/config.toml" \
 
 run_chroot systemctl enable greetd
 
-# ---- step 10: kernel cmdline + GRUB defaults ---------------------------------
+# ---- step 11: kernel cmdline + GRUB defaults ---------------------------------
 
 section "Configuring GRUB"
 
@@ -400,7 +422,7 @@ GRUB_TERMINAL=console
 GRUB_DISABLE_RECOVERY=true
 GRUB_EOF
 
-# ---- step 11: enable systemd units ------------------------------------------
+# ---- step 12: enable systemd units ------------------------------------------
 
 section "Enabling systemd units"
 
@@ -412,14 +434,14 @@ run_chroot systemctl enable \
     pipewire.socket \
     pipewire-pulse.socket
 
-# ---- step 12: first-boot gate ------------------------------------------------
+# ---- step 13: first-boot gate ------------------------------------------------
 
 # Absence of this file triggers the first-boot wizard (§6.3).
 # configure-image.sh writes it if an admin password is supplied in config.yaml.
 info "first-boot gate absent — wizard will run on first boot"
 rm -f "${CHROOT}/var/lib/zik/first-boot-done"
 
-# ---- step 13: SSH hardening (placeholder for P6.3) --------------------------
+# ---- step 14: SSH hardening (placeholder for P6.3) --------------------------
 
 # Enable SSHD but lock it down: key-only, no root login.
 # The admin's SSH public key is injected by configure-image.sh (P6.3).
@@ -435,7 +457,7 @@ run_chroot systemctl enable ssh
 
 umount_chroot_fs
 
-# ---- step 14: create raw disk image -----------------------------------------
+# ---- step 15: create raw disk image -----------------------------------------
 
 section "Creating disk image"
 
@@ -469,7 +491,7 @@ P_ROOT="${LOOP_DEV}p2"
 P_MAINT="${LOOP_DEV}p3"
 P_DATA="${LOOP_DEV}p4"
 
-# ---- step 15: format partitions ----------------------------------------------
+# ---- step 16: format partitions ----------------------------------------------
 
 info "formatting ESP (vfat)"
 mkfs.vfat -F 32 -n ZIK-EFI "${P_ESP}"
@@ -483,7 +505,7 @@ mkfs.ext4 -q -L ZIK-MAINT -F "${P_MAINT}"
 info "formatting data (f2fs)"
 mkfs.f2fs -q -l ZIK-DATA -f "${P_DATA}"
 
-# ---- step 16: populate root partition ----------------------------------------
+# ---- step 17: populate root partition ----------------------------------------
 
 section "Populating root partition"
 
@@ -514,7 +536,7 @@ tmpfs                                   /tmp            tmpfs   defaults,size=25
 tmpfs                                   /var/log/zik    tmpfs   defaults,size=64M       0 0
 FSTAB_EOF
 
-# ---- step 17: install GRUB EFI -----------------------------------------------
+# ---- step 18: install GRUB EFI -----------------------------------------------
 
 section "Installing GRUB"
 
@@ -529,7 +551,7 @@ grub-install \
 chroot "${MOUNT_ROOT}" update-grub 2>/dev/null || \
     chroot "${MOUNT_ROOT}" grub-mkconfig -o /boot/grub/grub.cfg
 
-# ---- step 18: release sanity checks -----------------------------------------
+# ---- step 19: release sanity checks -----------------------------------------
 
 section "Release sanity checks"
 
@@ -543,7 +565,7 @@ ${LEAKED_KEYS}"
 fi
 info "no SSH authorized_keys in image — OK"
 
-# ---- step 19: unmount --------------------------------------------------------
+# ---- step 20: unmount --------------------------------------------------------
 
 umount "${MOUNT_ROOT}/boot/efi"
 umount "${MOUNT_ROOT}/dev/pts"
@@ -554,7 +576,7 @@ umount "${MOUNT_ROOT}"
 losetup -d "${LOOP_DEV}"
 unset LOOP_DEV
 
-# ---- step 20: compress -------------------------------------------------------
+# ---- step 21: compress -------------------------------------------------------
 
 section "Compressing image"
 
