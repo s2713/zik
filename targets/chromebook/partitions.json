@@ -1,0 +1,43 @@
+{
+  "_comment": "GPT partition layout for target 2 (Chromebook, x86-64, UEFI/MrChromebox). Sizes in MiB; 0 = fill remaining space. Physical order on disk matches array order.",
+  "partitions": [
+    {
+      "role":     "esp",
+      "label":    "ZIK-EFI",
+      "size_mib": 256,
+      "type":     "uefi",
+      "fs":       "vfat",
+      "mount":    "/boot/efi",
+      "flags":    ["boot", "esp"]
+    },
+    {
+      "role":     "root",
+      "label":    "ZIK-ROOT",
+      "size_mib": 4096,
+      "type":     "linux",
+      "fs":       "ext4",
+      "mount":    "/",
+      "options":  "ro,relatime",
+      "_note":    "Mounted read-only in production; remounted rw only during OTA update (P6.6)."
+    },
+    {
+      "role":     "maintenance",
+      "label":    "ZIK-MAINT",
+      "size_mib": 512,
+      "type":     "linux",
+      "fs":       "ext4",
+      "mount":    null,
+      "_note":    "Separate GRUB entry; contains fsck, password-reset, reinstall tools (P6.7)."
+    },
+    {
+      "role":     "data",
+      "label":    "ZIK-DATA",
+      "size_mib": 0,
+      "type":     "linux",
+      "fs":       "f2fs",
+      "mount":    "/var/lib/zik",
+      "options":  "lazytime,discard",
+      "_note":    "Fills remaining disk space. F2FS for flash longevity (H.2.11)."
+    }
+  ]
+}

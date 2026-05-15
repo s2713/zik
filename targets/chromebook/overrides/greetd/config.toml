@@ -1,0 +1,14 @@
+# greetd configuration for the zik Chromebook kiosk.
+# Installed as /etc/greetd/config.toml by build-image.sh.
+#
+# Auto-starts cage (Wayland compositor) for the kiosk user.
+# The kiosk user has no login shell; cage launches Chromium directly.
+# User switching and session management are handled inside the web app.
+
+[terminal]
+vt = 1
+
+[default_session]
+# cage runs Chromium in kiosk mode; -d enables HiDPI scaling.
+command = "/usr/libexec/zik/start-kiosk.sh"
+user = "zik-kiosk"

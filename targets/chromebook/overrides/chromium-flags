@@ -1,0 +1,31 @@
+# Chromium flags for the zik kiosk session.
+# Read by start-kiosk.sh; one flag per line; blank lines and '#' lines ignored.
+#
+# These are passed directly to chromium on the command line.
+
+# Kiosk mode: single-window, no address bar, no context menus.
+--kiosk
+
+# App URL served by the local backend.
+--app=http://127.0.0.1:5173
+
+# Disable the session restore prompt.
+--no-first-run
+--disable-session-crashed-bubble
+
+# Wayland native (required under cage).
+--ozone-platform=wayland
+--enable-features=UseOzonePlatform
+
+# Enable touch events (touchscreen on the x360).
+--touch-events=enabled
+
+# Allow loopback connections (backend is on 127.0.0.1).
+--allow-running-insecure-content
+
+# Reduce memory overhead: single process for extensions, no sandbox relaxation.
+--disable-extensions
+
+# Disable background throttling so playback never pauses when "hidden".
+--disable-renderer-backgrounding
+--disable-backgrounding-occluded-windows

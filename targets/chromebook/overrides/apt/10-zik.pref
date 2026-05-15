@@ -1,0 +1,18 @@
+# APT pinning for the zik Chromebook image.
+# Installed into /etc/apt/preferences.d/10-zik inside the chroot.
+#
+# Policy: pin trixie at 900 (default for stable would be 500; raising it
+# prevents any future -backports entry from silently winning).
+# This file is intentionally minimal: we do not pin individual packages.
+
+Package: *
+Pin: release n=trixie
+Pin-Priority: 900
+
+Package: *
+Pin: release n=trixie-updates
+Pin-Priority: 900
+
+Package: *
+Pin: release n=trixie-security
+Pin-Priority: 950

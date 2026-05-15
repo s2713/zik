@@ -1,0 +1,20 @@
+# Extra kernel command-line parameters appended by build-image.sh to the
+# GRUB_CMDLINE_LINUX_DEFAULT entry in /etc/default/grub.
+#
+# One space-separated token per line for readability; blank lines and
+# lines starting with '#' are ignored by the build script.
+
+# Suppress most boot messages; splash handled by Plymouth (if installed).
+quiet
+
+# Ensure the framebuffer console uses tty1 (greetd terminal).
+console=tty1
+
+# Intel i915: enable Panel Self Refresh (saves power on battery).
+i915.enable_psr=1
+
+# Intel HDA / SOF audio: force SOF driver for Gemini Lake DSP.
+snd_intel_dspcfg.dsp_driver=1
+
+# Disable the NMI watchdog to reduce wakeups (battery life).
+nmi_watchdog=0
