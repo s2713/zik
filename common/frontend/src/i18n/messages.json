@@ -1274,5 +1274,65 @@
   "subsonic.user": {
     "en": "Username",
     "fr": "Identifiant"
+  },
+  "bt.accept": {
+    "en": "Accept",
+    "fr": "Accepter"
+  },
+  "bt.available": {
+    "en": "Available devices",
+    "fr": "Appareils disponibles"
+  },
+  "bt.confirm-msg": {
+    "en": "Confirm pairing with",
+    "fr": "Confirmer l'association avec"
+  },
+  "bt.confirm-title": {
+    "en": "Confirm pairing",
+    "fr": "Confirmer l'association"
+  },
+  "bt.connect": {
+    "en": "Connect",
+    "fr": "Connecter"
+  },
+  "bt.connected": {
+    "en": "Connected",
+    "fr": "Connecté"
+  },
+  "bt.disconnect": {
+    "en": "Disconnect",
+    "fr": "Déconnecter"
+  },
+  "bt.no-devices": {
+    "en": "No devices found. Tap Scan to search.",
+    "fr": "Aucun appareil trouvé. Appuyez sur Rechercher."
+  },
+  "bt.pair": {
+    "en": "Pair",
+    "fr": "Associer"
+  },
+  "bt.paired": {
+    "en": "Paired devices",
+    "fr": "Appareils associés"
+  },
+  "bt.reject": {
+    "en": "Reject",
+    "fr": "Refuser"
+  },
+  "bt.remove": {
+    "en": "Forget",
+    "fr": "Oublier"
+  },
+  "bt.scan": {
+    "en": "Scan for devices",
+    "fr": "Rechercher des appareils"
+  },
+  "bt.scanning": {
+    "en": "Scanning…",
+    "fr": "Recherche en cours…"
+  },
+  "bt.unavailable": {
+    "en": "Bluetooth not available on this device.",
+    "fr": "Bluetooth non disponible sur cet appareil."
   }
 }

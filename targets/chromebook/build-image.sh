@@ -248,6 +248,8 @@ run_chroot apt-get install -y --no-install-recommends \
     libpam-modules \
     libpam-runtime \
     python3 \
+    python3-dbus \
+    python3-gi \
     python3-venv \
     python3-pip \
     git \
@@ -310,7 +312,7 @@ run_chroot useradd \
     --shell /usr/sbin/nologin \
     --home-dir /var/lib/zik \
     --no-create-home \
-    --groups audio,video \
+    --groups audio,video,bluetooth \
     --comment "zik backend" \
     zik || true
 

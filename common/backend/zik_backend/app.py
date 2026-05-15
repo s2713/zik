@@ -21,6 +21,7 @@ from .admin_network import make_admin_network_router, make_network_store
 from .admin_services import ServiceRecord, make_admin_services_router, make_service_store
 from .admin_terminal import make_admin_terminal_router
 from .admin_update import make_admin_update_router
+from .bluetooth import make_bluetooth_router
 from .helper_client import HelperClient
 from .middleware import CsrfDoubleSubmitMiddleware, OriginCheckMiddleware
 from .player import PlayerManager, state_as_dict
@@ -302,6 +303,7 @@ def make_app(
                 _demo_network_policy, _demo_networks,
                 _demo_device_config, _demo_device_lock,
             ),
+            *make_bluetooth_router(_sessions, _demo_users),
             *make_user_router(),
         ],
         lifespan=_lifespan,

@@ -3,6 +3,22 @@ import { customElement, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 
 import { getCsrfHeaders } from "./csrf.js";
+
+interface BtDevice {
+  address:   string;
+  name:      string;
+  paired:    boolean;
+  connected: boolean;
+  trusted:   boolean;
+  rssi:      number | null;
+}
+
+interface BtPairing {
+  device:  string;
+  name:    string;
+  address: string;
+  passkey: string;
+}
 import { isGloballyEnabled } from "./global-services.js";
 import { t } from "./i18n/i18n.js";
 import { SUPPORTED_LANGS, getLanguage, setLanguage } from "./i18n/i18n.js";
@@ -479,6 +495,56 @@ export class UserShell extends PlayerBase {
     /* connectivity stub */
     .conn-stub { color: #64748b; font-size: 0.88rem; font-style: italic; margin: 0; }
 
+    /* ---- bluetooth panel ---- */
+    .bt-scan-row { display: flex; align-items: center; justify-content: space-between; }
+    .bt-section-label {
+      font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em;
+      color: #64748b; margin-bottom: 0.5rem;
+    }
+    .bt-device-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.5rem 0; border-bottom: 1px solid #1e293b; gap: 0.5rem;
+    }
+    .bt-device-row:last-child { border-bottom: none; }
+    .bt-device-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; flex: 1; }
+    .bt-device-name { font-size: 0.9rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bt-device-addr { font-size: 0.72rem; color: #64748b; }
+    .bt-badge { font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; width: fit-content; }
+    .bt-badge.connected { background: #134e4a; color: #34d399; }
+    .bt-rssi { font-size: 0.7rem; color: #94a3b8; }
+    .bt-device-actions { display: flex; gap: 0.3rem; flex-shrink: 0; }
+    .bt-btn {
+      font-size: 0.78rem; padding: 0.3rem 0.65rem; border-radius: 6px;
+      border: 1px solid #334155; background: #0f172a; color: #cbd5e1; cursor: pointer;
+    }
+    .bt-btn:hover:not(:disabled) { background: #1e293b; color: #f1f5f9; }
+    .bt-btn:disabled { opacity: 0.45; cursor: default; }
+    .bt-btn-remove { border-color: #7f1d1d; color: #fca5a5; }
+    .bt-btn-remove:hover:not(:disabled) { background: #450a0a; }
+    /* pairing confirmation overlay — covers the whole drawer */
+    .bt-pairing-overlay {
+      position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 92vw);
+      background: rgba(0,0,0,0.82);
+      display: flex; align-items: center; justify-content: center; z-index: 210;
+    }
+    .bt-pairing-box {
+      background: #1e293b; border: 1px solid #334155; border-radius: 14px;
+      padding: 1.5rem; max-width: 280px; width: 90%;
+      display: flex; flex-direction: column; gap: 1rem;
+    }
+    .bt-pairing-title { font-weight: 600; font-size: 1rem; }
+    .bt-pairing-msg { font-size: 0.85rem; color: #94a3b8; line-height: 1.5; }
+    .bt-passkey {
+      font-size: 2rem; font-weight: 700; letter-spacing: 0.25em;
+      text-align: center; color: #38bdf8;
+    }
+    .bt-pairing-btns { display: flex; gap: 0.75rem; justify-content: flex-end; }
+    .btn-primary {
+      background: #0ea5e9; color: #fff; border: none; border-radius: 8px;
+      padding: 0.45rem 1rem; font-size: 0.85rem; cursor: pointer;
+    }
+    .btn-primary:hover { background: #38bdf8; }
+
     /* ---- power confirm dialog ---- */
     .dialog-overlay {
       position: fixed; inset: 0;
@@ -539,6 +605,14 @@ export class UserShell extends PlayerBase {
   @state() private _connWifiOpen = false;
   @state() private _connBtOpen   = false;
   @state() private _powerConfirm = false;
+
+  // ---- bluetooth ----
+  @state() private _btDevices: BtDevice[]     = [];
+  @state() private _btScanning                = false;
+  @state() private _btBusy: string | null     = null;   // address of in-progress operation
+  @state() private _btPairing: BtPairing | null = null; // pending confirmation dialog
+  @state() private _btUnavailable             = false;
+  private _btPollTimer: ReturnType<typeof setInterval> | null = null;
 
   // ---- power ----
   @state() private _powerBusy  = false;
@@ -671,6 +745,78 @@ export class UserShell extends PlayerBase {
   }
 
   private _goHome(): void { this._activeId = null; }
+
+  // ---- bluetooth ----
+
+  private async _openBt(): Promise<void> {
+    this._connBtOpen = true;
+    await this._btRefresh();
+    // Poll for pairing requests while the drawer is open.
+    this._btPollTimer = setInterval(() => void this._btPollPairing(), 1500);
+  }
+
+  private _closeBt(): void {
+    this._connBtOpen = false;
+    if (this._btPollTimer !== null) {
+      clearInterval(this._btPollTimer);
+      this._btPollTimer = null;
+    }
+  }
+
+  private async _btRefresh(): Promise<void> {
+    try {
+      const r = await fetch("/api/bluetooth/devices");
+      if (r.status === 503) { this._btUnavailable = true; return; }
+      this._btDevices = await r.json() as BtDevice[];
+      this._btUnavailable = false;
+    } catch { /* ignore transient errors */ }
+  }
+
+  private async _btPollPairing(): Promise<void> {
+    try {
+      const r = await fetch("/api/bluetooth/pairing-request");
+      if (!r.ok) return;
+      const req = await r.json() as BtPairing | null;
+      this._btPairing = req;
+    } catch { /* ignore */ }
+  }
+
+  private async _btScan(on: boolean): Promise<void> {
+    this._btScanning = on;
+    await fetch("/api/bluetooth/scan", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...getCsrfHeaders() },
+      body: JSON.stringify({ on }),
+    });
+    if (on) {
+      // Refresh device list after a short discovery window.
+      setTimeout(() => void this._btRefresh(), 5000);
+    }
+  }
+
+  private async _btAction(action: string, address: string): Promise<void> {
+    this._btBusy = address;
+    try {
+      await fetch(`/api/bluetooth/${action}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...getCsrfHeaders() },
+        body: JSON.stringify({ address }),
+      });
+      await this._btRefresh();
+    } finally {
+      this._btBusy = null;
+    }
+  }
+
+  private async _btRespond(accept: boolean): Promise<void> {
+    this._btPairing = null;
+    await fetch("/api/bluetooth/pairing-request/respond", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...getCsrfHeaders() },
+      body: JSON.stringify({ accept }),
+    });
+    await this._btRefresh();
+  }
 
   // ---- service visibility ----
   private _toggleVisible(tag: string): void {
@@ -853,8 +999,8 @@ export class UserShell extends PlayerBase {
                     title=${t("shell.connectivity.bt")}
                     aria-label=${t("shell.connectivity.bt")}
                     @click=${() => {
-                      this._connBtOpen = !this._connBtOpen;
                       this._connWifiOpen = false; this._settingsOpen = false;
+                      if (this._connBtOpen) { this._closeBt(); } else { void this._openBt(); }
                     }}>
               ${_svgBt()}
             </button>` : nothing}
@@ -865,7 +1011,7 @@ export class UserShell extends PlayerBase {
                   aria-label=${t("shell.settings")}
                   @click=${() => {
                     this._settingsOpen = !this._settingsOpen;
-                    this._connWifiOpen = false; this._connBtOpen = false;
+                    this._connWifiOpen = false; this._closeBt();
                   }}>
             ⚙
           </button>
@@ -1225,18 +1371,115 @@ export class UserShell extends PlayerBase {
     `;
   }
 
-  // ---- render: bluetooth panel (stub) ----
+  // ---- render: bluetooth panel ----
   private _renderBt(): TemplateResult {
+    const devices  = this._btDevices;
+    const paired   = devices.filter(d => d.paired);
+    const available = devices.filter(d => !d.paired);
+
     return html`
-      <div class="overlay" @click=${() => { this._connBtOpen = false; }}></div>
+      <div class="overlay" @click=${() => this._closeBt()}></div>
       <div class="drawer" role="dialog" aria-label=${t("shell.connectivity.bt")}>
         <div class="drawer-header">
           <span class="drawer-title">${t("shell.connectivity.bt")}</span>
-          <button class="drawer-close" @click=${() => { this._connBtOpen = false; }}>✕</button>
+          <button class="drawer-close" @click=${() => this._closeBt()}>✕</button>
         </div>
-        <div class="drawer-section">
-          <p class="conn-stub">${t("shell.connectivity.stub")}</p>
-        </div>
+
+        ${this._btUnavailable ? html`
+          <div class="drawer-section">
+            <p class="conn-stub">${t("bt.unavailable")}</p>
+          </div>
+        ` : html`
+
+          <!-- Pairing confirmation dialog (shown when a request is pending) -->
+          ${this._btPairing ? html`
+            <div class="bt-pairing-overlay">
+              <div class="bt-pairing-box">
+                <div class="bt-pairing-title">${t("bt.confirm-title")}</div>
+                <div class="bt-pairing-msg">
+                  ${t("bt.confirm-msg")}
+                  <strong>${this._btPairing.name}</strong>
+                  (${this._btPairing.address})
+                </div>
+                <div class="bt-passkey">${this._btPairing.passkey}</div>
+                <div class="bt-pairing-btns">
+                  <button class="btn-danger" @click=${() => void this._btRespond(false)}>
+                    ${t("bt.reject")}
+                  </button>
+                  <button class="btn-primary" @click=${() => void this._btRespond(true)}>
+                    ${t("bt.accept")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ` : nothing}
+
+          <!-- Scan toggle -->
+          <div class="drawer-section bt-scan-row">
+            <span>${this._btScanning ? t("bt.scanning") : t("bt.scan")}</span>
+            <button class="toggle-btn ${this._btScanning ? "on" : "off"}"
+                    @click=${() => void this._btScan(!this._btScanning)}>
+              ${this._btScanning ? "⏹" : "▶"}
+            </button>
+          </div>
+
+          <!-- Paired devices -->
+          ${paired.length > 0 ? html`
+            <div class="drawer-section">
+              <div class="bt-section-label">${t("bt.paired")}</div>
+              ${paired.map(d => html`
+                <div class="bt-device-row">
+                  <div class="bt-device-info">
+                    <span class="bt-device-name">${d.name}</span>
+                    <span class="bt-device-addr">${d.address}</span>
+                    ${d.connected ? html`<span class="bt-badge connected">${t("bt.connected")}</span>` : nothing}
+                  </div>
+                  <div class="bt-device-actions">
+                    ${d.connected
+                      ? html`<button class="bt-btn" ?disabled=${this._btBusy === d.address}
+                                     @click=${() => void this._btAction("disconnect", d.address)}>
+                               ${t("bt.disconnect")}
+                             </button>`
+                      : html`<button class="bt-btn" ?disabled=${this._btBusy === d.address}
+                                     @click=${() => void this._btAction("connect", d.address)}>
+                               ${t("bt.connect")}
+                             </button>`}
+                    <button class="bt-btn bt-btn-remove" ?disabled=${this._btBusy === d.address}
+                            @click=${() => void this._btAction("remove", d.address)}>
+                      ${t("bt.remove")}
+                    </button>
+                  </div>
+                </div>
+              `)}
+            </div>
+          ` : nothing}
+
+          <!-- Available (unpaired) devices found during scan -->
+          ${available.length > 0 ? html`
+            <div class="drawer-section">
+              <div class="bt-section-label">${t("bt.available")}</div>
+              ${available.map(d => html`
+                <div class="bt-device-row">
+                  <div class="bt-device-info">
+                    <span class="bt-device-name">${d.name}</span>
+                    <span class="bt-device-addr">${d.address}</span>
+                    ${d.rssi !== null ? html`<span class="bt-rssi">${d.rssi} dBm</span>` : nothing}
+                  </div>
+                  <button class="bt-btn" ?disabled=${this._btBusy === d.address}
+                          @click=${() => void this._btAction("pair", d.address)}>
+                    ${t("bt.pair")}
+                  </button>
+                </div>
+              `)}
+            </div>
+          ` : nothing}
+
+          ${paired.length === 0 && available.length === 0 ? html`
+            <div class="drawer-section">
+              <p class="conn-stub">${t("bt.no-devices")}</p>
+            </div>
+          ` : nothing}
+        `}
       </div>
     `;
   }
