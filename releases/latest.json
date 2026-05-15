@@ -1,0 +1,15 @@
+{
+  "latest": "0.0.0",
+  "min_version": "0.0.0",
+  "changelog_url": "",
+  "artifacts": {
+    "backend": {
+      "url": "",
+      "sha256": ""
+    },
+    "frontend": {
+      "url": "",
+      "sha256": ""
+    }
+  }
+}

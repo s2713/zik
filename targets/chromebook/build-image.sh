@@ -256,6 +256,7 @@ run_chroot apt-get install -y --no-install-recommends \
     dosfstools \
     powertop \
     curl \
+    gnupg \
     openssh-server \
     sudo \
     less \
@@ -339,7 +340,34 @@ if [[ -f "${PRIVHELP_DEST}" ]]; then
     info "setuid applied to zik-privhelp"
 fi
 
-# ---- step 8: greetd + kiosk config ------------------------------------------
+# ---- step 8: maintainer GPG keys --------------------------------------------
+#
+# Import all keys from .maintainers/keys/ into a dedicated keyring used by the
+# OTA updater to verify release artifact signatures.  If no keys are present
+# yet (bootstrapping), the keyring is created empty and GPG verification is
+# effectively skipped at update time.
+
+section "Importing maintainer GPG keys"
+
+KEYS_DIR="${REPO_ROOT}/.maintainers/keys"
+ZIK_KEYS_DIR="${CHROOT}/usr/share/zik"
+ZIK_KEYRING="${ZIK_KEYS_DIR}/trustedkeys.gpg"
+
+install -d -m 0755 "${ZIK_KEYS_DIR}"
+
+shopt -s nullglob
+KEY_COUNT=0
+for key_file in "${KEYS_DIR}"/*.asc; do
+    gpg --batch --no-default-keyring \
+        --keyring "${ZIK_KEYRING}" \
+        --import "${key_file}" 2>/dev/null || true
+    KEY_COUNT=$(( KEY_COUNT + 1 ))
+done
+shopt -u nullglob
+
+info "imported ${KEY_COUNT} maintainer key file(s) into ${ZIK_KEYRING}"
+
+# ---- step 9: greetd + kiosk config ------------------------------------------
 
 section "Configuring greetd"
 
@@ -349,7 +377,7 @@ install -m 0644 "${OVERRIDES_DIR}/greetd/config.toml" \
 
 run_chroot systemctl enable greetd
 
-# ---- step 9: kernel cmdline + GRUB defaults ---------------------------------
+# ---- step 10: kernel cmdline + GRUB defaults ---------------------------------
 
 section "Configuring GRUB"
 
@@ -372,7 +400,7 @@ GRUB_TERMINAL=console
 GRUB_DISABLE_RECOVERY=true
 GRUB_EOF
 
-# ---- step 10: enable systemd units ------------------------------------------
+# ---- step 11: enable systemd units ------------------------------------------
 
 section "Enabling systemd units"
 
@@ -384,14 +412,14 @@ run_chroot systemctl enable \
     pipewire.socket \
     pipewire-pulse.socket
 
-# ---- step 11: first-boot gate ------------------------------------------------
+# ---- step 12: first-boot gate ------------------------------------------------
 
 # Absence of this file triggers the first-boot wizard (§6.3).
 # configure-image.sh writes it if an admin password is supplied in config.yaml.
 info "first-boot gate absent — wizard will run on first boot"
 rm -f "${CHROOT}/var/lib/zik/first-boot-done"
 
-# ---- step 12: SSH hardening (placeholder for P6.3) --------------------------
+# ---- step 13: SSH hardening (placeholder for P6.3) --------------------------
 
 # Enable SSHD but lock it down: key-only, no root login.
 # The admin's SSH public key is injected by configure-image.sh (P6.3).
@@ -407,7 +435,7 @@ run_chroot systemctl enable ssh
 
 umount_chroot_fs
 
-# ---- step 13: create raw disk image -----------------------------------------
+# ---- step 14: create raw disk image -----------------------------------------
 
 section "Creating disk image"
 
@@ -441,7 +469,7 @@ P_ROOT="${LOOP_DEV}p2"
 P_MAINT="${LOOP_DEV}p3"
 P_DATA="${LOOP_DEV}p4"
 
-# ---- step 14: format partitions ----------------------------------------------
+# ---- step 15: format partitions ----------------------------------------------
 
 info "formatting ESP (vfat)"
 mkfs.vfat -F 32 -n ZIK-EFI "${P_ESP}"
@@ -455,7 +483,7 @@ mkfs.ext4 -q -L ZIK-MAINT -F "${P_MAINT}"
 info "formatting data (f2fs)"
 mkfs.f2fs -q -l ZIK-DATA -f "${P_DATA}"
 
-# ---- step 15: populate root partition ----------------------------------------
+# ---- step 16: populate root partition ----------------------------------------
 
 section "Populating root partition"
 
@@ -486,7 +514,7 @@ tmpfs                                   /tmp            tmpfs   defaults,size=25
 tmpfs                                   /var/log/zik    tmpfs   defaults,size=64M       0 0
 FSTAB_EOF
 
-# ---- step 16: install GRUB EFI -----------------------------------------------
+# ---- step 17: install GRUB EFI -----------------------------------------------
 
 section "Installing GRUB"
 
@@ -501,7 +529,21 @@ grub-install \
 chroot "${MOUNT_ROOT}" update-grub 2>/dev/null || \
     chroot "${MOUNT_ROOT}" grub-mkconfig -o /boot/grub/grub.cfg
 
-# ---- step 17: unmount --------------------------------------------------------
+# ---- step 18: release sanity checks -----------------------------------------
+
+section "Release sanity checks"
+
+# Fail the build if any SSH authorized_keys made it into the image.
+# Per-deployment SSH keys belong in config.yaml → configure-image.sh, not here.
+LEAKED_KEYS="$(find "${CHROOT}/root" "${CHROOT}/home" \
+    -name "authorized_keys" -type f 2>/dev/null || true)"
+if [[ -n "${LEAKED_KEYS}" ]]; then
+    die "SSH authorized_keys found in image chroot — remove before releasing:
+${LEAKED_KEYS}"
+fi
+info "no SSH authorized_keys in image — OK"
+
+# ---- step 19: unmount --------------------------------------------------------
 
 umount "${MOUNT_ROOT}/boot/efi"
 umount "${MOUNT_ROOT}/dev/pts"
@@ -512,7 +554,7 @@ umount "${MOUNT_ROOT}"
 losetup -d "${LOOP_DEV}"
 unset LOOP_DEV
 
-# ---- step 18: compress -------------------------------------------------------
+# ---- step 20: compress -------------------------------------------------------
 
 section "Compressing image"
 

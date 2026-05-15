@@ -128,6 +128,7 @@ export class ScreenLockElement extends PlayerBase {
   @state() private _adminPw      = "";
   @state() private _adminError   = "";
   @state() private _deviceLocked = false;   // admin device-lock active
+  @state() private _loginError   = "";      // per-user login error message
 
   private _idleTimer:     ReturnType<typeof setTimeout>  | null = null;
   private _lockTimer:     ReturnType<typeof setTimeout>  | null = null;
@@ -278,12 +279,23 @@ export class ScreenLockElement extends PlayerBase {
         await ensureCsrfToken();
         r = await attempt();
       }
-      // 403 with device-locked means admin re-locked while this screen was open.
       if (!r.ok) {
         const d = await r.json() as { error?: string };
-        if (d.error === "device-locked") { this._deviceLocked = true; return; }
+        if (d.error === "admin_lock") {
+          // Admin re-locked while this screen was open.
+          this._deviceLocked = true;
+          return;
+        }
+        if (d.error === "account_disabled") {
+          this._loginError = t("screen.account-disabled");
+          return;
+        }
+        // Any other server-side rejection — show a generic message.
+        this._loginError = t("screen.login-error");
+        return;
       }
-    } catch { /* ignore; local state still updates */ }
+      this._loginError = "";
+    } catch { /* network error — let local state update anyway */ }
     setCurrentUser(name);
     if (name !== prev) {
       // Different user — fire USER_CHANGED_EVENT (already done by setCurrentUser)
@@ -354,11 +366,12 @@ export class ScreenLockElement extends PlayerBase {
           <div class="users">
             ${this._users.map((name) => html`
               <button class="user-btn ${name === active ? "active" : ""}"
-                      @click=${() => void this._selectUser(name)}>
+                      @click=${() => { this._loginError = ""; void this._selectUser(name); }}>
                 ${name}
               </button>
             `)}
           </div>
+          ${this._loginError ? html`<div class="err">${this._loginError}</div>` : nothing}
           <button class="admin-btn" @click=${() => { this._adminMode = true; }}>
             ${t("admin.login")}
           </button>

@@ -82,10 +82,13 @@ def make_session_router(sessions: dict, users: dict | None = None,
             return JSONResponse({"ok": True, "user": "admin", "is_admin": True})
         # Device lock — only admin may log in while active.
         if device_lock is not None and is_locked(device_lock):
-            return JSONResponse({"ok": False, "error": "device-locked"}, status_code=403)
+            return JSONResponse({"ok": False, "error": "admin_lock"}, status_code=403)
         valid = set(users.keys()) if users is not None else set(_DEMO_USERS)
         if username not in valid:
-            return JSONResponse({"ok": False, "error": "unknown user"}, status_code=400)
+            return JSONResponse({"ok": False, "error": "unknown_user"}, status_code=400)
+        # Disabled account — distinct error so the frontend can show a specific message.
+        if users is not None and username in users and users[username].disabled:
+            return JSONResponse({"ok": False, "error": "account_disabled"}, status_code=403)
         sessions[sid]["user"]     = username
         sessions[sid]["is_admin"] = False
         sessions[sid].pop("locked", None)

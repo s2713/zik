@@ -1,16 +1,26 @@
 """Admin API — device lock management.
 
 When locked, only the admin can log in; regular users are rejected at the
-session login endpoint.  In production (Target 2+) this would also be enforced
-at the PAM level; here it is an in-memory flag checked by the session router.
+session login endpoint.  On Target 2 the lock is also enforced at the PAM
+level (pam_zik_adminlock) for SSH and VT logins.
+
+Lock state is persisted to /var/lib/zik/adminlock via zik-privhelp so that it
+survives backend restarts.  The backend reads the file on startup and writes
+via privhelp on set/clear.  The file is absent when unlocked, empty for an
+indefinite lock, or contains a Unix timestamp (float) for a timed lock.
 """
 
+import subprocess
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+
+PRIVHELP_BIN = Path("/usr/libexec/zik/zik-privhelp")
+LOCK_FILE    = Path("/var/lib/zik/adminlock")
 
 
 @dataclass
@@ -20,9 +30,40 @@ class DeviceLock:
     locked_until: float | None  = None  # Unix epoch; None = indefinite when locked
 
 
+def _call_privhelp(*args: str) -> bool:
+    """Call zik-privhelp with args; return True on success. No-op in demo mode."""
+    if not PRIVHELP_BIN.exists():
+        return True  # demo mode — privhelp not installed
+    try:
+        subprocess.run(
+            [str(PRIVHELP_BIN), *args],
+            check=True, timeout=10,
+            capture_output=True,
+        )
+        return True
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return False
+
+
+def _read_lock_from_disk() -> DeviceLock:
+    """Read lock state from disk; returns unlocked state if file absent or unreadable."""
+    try:
+        if not LOCK_FILE.exists():
+            return DeviceLock()
+        content = LOCK_FILE.read_text().strip()
+        if not content:
+            return DeviceLock(locked=True, locked_until=None)
+        until = float(content)
+        if time.time() >= until:
+            return DeviceLock()  # lock expired while backend was down
+        return DeviceLock(locked=True, locked_until=until)
+    except (OSError, ValueError):
+        return DeviceLock()
+
+
 def make_lock_store() -> DeviceLock:
-    """Return a fresh (unlocked) device lock store."""
-    return DeviceLock()
+    """Return device lock state, rehydrating from disk on production systems."""
+    return _read_lock_from_disk()
 
 
 def is_locked(lock: DeviceLock) -> bool:
@@ -30,7 +71,7 @@ def is_locked(lock: DeviceLock) -> bool:
     if not lock.locked:
         return False
     if lock.locked_until is not None and time.time() >= lock.locked_until:
-        # Lock expired — auto-clear.
+        # Lock expired — auto-clear in memory (file stays until next explicit unlock).
         lock.locked       = False
         lock.locked_until = None
         return False
@@ -80,6 +121,13 @@ def make_admin_lock_router(sessions: dict, lock: DeviceLock, audit=None) -> list
             lock.locked_until = ts if ts > time.time() else None
         else:
             lock.locked_until = None  # indefinite
+
+        # Persist to disk via privhelp (no-op in demo mode).
+        if lock.locked_until is not None:
+            _call_privhelp("admin-lock", "--set", "--until", str(lock.locked_until))
+        else:
+            _call_privhelp("admin-lock", "--set")
+
         if audit is not None:
             audit.add("admin", "device-lock", mode)
         return JSONResponse({"ok": True, "lock": _to_dict(lock)})
@@ -90,6 +138,7 @@ def make_admin_lock_router(sessions: dict, lock: DeviceLock, audit=None) -> list
             return JSONResponse({"error": "forbidden"}, status_code=403)
         lock.locked       = False
         lock.locked_until = None
+        _call_privhelp("admin-lock", "--clear")
         if audit is not None:
             audit.add("admin", "device-unlock")
         return JSONResponse({"ok": True, "lock": _to_dict(lock)})

@@ -196,7 +196,27 @@ wifi:
 users:
   - name: alice
     password: "alice-password"
+ssh_authorized_keys: |
+  ssh-ed25519 AAAA... you@yourmachine
 ```
+
+**Generating an SSH key pair** (run this on your workstation, not the device):
+
+```bash
+ssh-keygen -t ed25519 -C "zik-admin@mydevice" -f ~/.ssh/zik_admin_ed25519
+# Public key to paste into config.yaml:
+cat ~/.ssh/zik_admin_ed25519.pub
+```
+
+Once the device is running, connect with:
+
+```bash
+ssh -i ~/.ssh/zik_admin_ed25519 zik-admin@<device-ip>
+```
+
+**Adding SSH keys after deployment** requires physical access: attach a keyboard,
+press Ctrl+Alt+F2 at the Zik login screen to reach a VT, log in as `zik-admin`,
+then edit `/home/zik-admin/.ssh/authorized_keys`.
 
 ```bash
 sudo ./configure-image.sh \

@@ -518,6 +518,13 @@ export class AdminApp extends PlayerBase {
   @state() private _lockMinutes     = "60";
   @state() private _lockUntil       = "";
 
+  // ---- update section state (in device tab) ----
+  @state() private _updatePhase: "idle" | "checking" | "ready" | "available" | "installing" | "done" | "error" = "idle";
+  @state() private _updateCurrent   = "";
+  @state() private _updateLatest    = "";
+  @state() private _updateChangelog = "";
+  @state() private _updateMsg       = "";
+
   // ---- backup section state (in device tab) ----
   @state() private _exportPw   = "";
   @state() private _importPw   = "";
@@ -639,6 +646,47 @@ export class AdminApp extends PlayerBase {
       const r = await fetch("/api/admin/lock");
       if (r.ok) this._lockState = await r.json() as LockState;
     } catch { /* ignore */ }
+  }
+
+  private async _checkUpdate(): Promise<void> {
+    this._updatePhase = "checking";
+    this._updateMsg   = "";
+    try {
+      const r = await fetch("/api/admin/update/check");
+      if (!r.ok) { this._updatePhase = "error"; this._updateMsg = t("admin.update.error"); return; }
+      const d = await r.json() as {
+        current: string; latest: string; up_to_date: boolean; changelog_url: string;
+      };
+      this._updateCurrent   = d.current;
+      this._updateLatest    = d.latest;
+      this._updateChangelog = d.changelog_url;
+      this._updatePhase     = d.up_to_date ? "ready" : "available";
+    } catch {
+      this._updatePhase = "error";
+      this._updateMsg   = t("admin.update.error");
+    }
+  }
+
+  private async _installUpdate(): Promise<void> {
+    this._updatePhase = "installing";
+    this._updateMsg   = "";
+    try {
+      const r = await fetch("/api/admin/update/start", {
+        method: "POST",
+        headers: getCsrfHeaders(),
+      });
+      const d = await r.json() as { ok?: boolean; version?: string; error?: string };
+      if (r.ok && d.ok) {
+        this._updatePhase = "done";
+        this._updateMsg   = t("admin.update.success").replace("{v}", d.version ?? "");
+      } else {
+        this._updatePhase = "error";
+        this._updateMsg   = d.error ?? t("admin.update.error");
+      }
+    } catch {
+      this._updatePhase = "error";
+      this._updateMsg   = t("admin.update.error");
+    }
   }
 
   private async _fetchAudit(): Promise<void> {
@@ -1579,11 +1627,59 @@ export class AdminApp extends PlayerBase {
         ${this._backupMsg ? html`<div class="backup-msg">${this._backupMsg}</div>` : nothing}
       </div>
 
-      <!-- hardware actions (stubs) -->
+      <!-- app update section -->
+      <div class="dev-section">
+        <h3>${t("admin.update.title")}</h3>
+        <div class="dev-actions">
+          <div class="dev-action-row">
+            <button class="dev-action-btn"
+                    ?disabled=${this._updatePhase === "checking" || this._updatePhase === "installing"}
+                    @click=${() => void this._checkUpdate()}>
+              ${this._updatePhase === "checking"
+                ? t("admin.update.checking")
+                : t("admin.update.check")}
+            </button>
+            ${this._updatePhase === "ready" ? html`
+              <span>${t("admin.update.up-to-date")} (${this._updateCurrent})</span>
+            ` : this._updatePhase === "available" ? html`
+              <span>
+                ${t("admin.update.available")} <strong>${this._updateLatest}</strong>
+                ${this._updateChangelog ? html`
+                  — <a href=${this._updateChangelog} target="_blank" rel="noopener">
+                      ${t("admin.update.changelog")}
+                    </a>` : nothing}
+              </span>
+            ` : this._updateCurrent ? html`
+              <span>${t("admin.update.current-version")}: ${this._updateCurrent}</span>
+            ` : nothing}
+          </div>
+          ${this._updatePhase === "available" ? html`
+            <div class="dev-action-row">
+              <button class="dev-action-btn"
+                      @click=${() => void this._installUpdate()}>
+                ${t("admin.update.install")} ${this._updateLatest}
+              </button>
+            </div>
+          ` : this._updatePhase === "installing" ? html`
+            <div class="dev-action-row">
+              <span>${t("admin.update.installing")}</span>
+            </div>
+          ` : nothing}
+          ${this._updateMsg ? html`
+            <div class="dev-action-row">
+              <span class="${this._updatePhase === "error" ? "set-err" : "set-msg"}">
+                ${this._updateMsg}
+              </span>
+            </div>
+          ` : nothing}
+        </div>
+      </div>
+
+      <!-- other hardware actions (stubs) -->
       <div class="dev-section">
         <h3>${t("admin.device.actions-title")}</h3>
         <div class="dev-actions">
-          ${(["format-drive", "update-app", "fsck", "reinstall"] as const).map((action) => html`
+          ${(["format-drive", "fsck", "reinstall"] as const).map((action) => html`
             <div class="dev-action-row">
               <button class="dev-action-btn" disabled>
                 ${t(`admin.device.action-${action}`)}

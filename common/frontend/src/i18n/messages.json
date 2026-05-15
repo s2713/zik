@@ -1,329 +1,1278 @@
 {
-  "health.ok":               { "en": "Backend is running.",          "fr": "Le serveur est opérationnel." },
-  "health.error":            { "en": "Backend unreachable: {error}", "fr": "Serveur inaccessible : {error}" },
-  "lang.en":                 { "en": "English",                      "fr": "Anglais" },
-  "lang.fr":                 { "en": "French",                       "fr": "Français" },
-  "service.demo":            { "en": "Demo",                         "fr": "Démo" },
-  "service.files":           { "en": "Files",                        "fr": "Fichiers" },
-  "player.play":             { "en": "Play",                         "fr": "Lecture" },
-  "player.pause":            { "en": "Pause",                        "fr": "Pause" },
-  "player.stop":             { "en": "Stop",                         "fr": "Arrêt" },
-  "player.prev":             { "en": "Prev",                         "fr": "Préc." },
-  "player.next":             { "en": "Next",                         "fr": "Suiv." },
-  "player.volume":           { "en": "Volume",                       "fr": "Volume" },
-  "player.normalize":        { "en": "Normalize",                    "fr": "Normaliser" },
-  "player.normalizing":      { "en": "Normalizing ✓",               "fr": "Normalisation ✓" },
-  "player.normalize-blocked": { "en": "Unavailable for this stream", "fr": "Indisponible pour ce flux" },
-  "files.scan":              { "en": "Scan all",                     "fr": "Tout scanner" },
-  "files.no-tracks":         { "en": "No tracks. Mount a source and click Scan.", "fr": "Aucun fichier. Montez une source et cliquez sur Scanner." },
-  "files.sort.artist":       { "en": "Artist",                       "fr": "Artiste" },
-  "files.sort.album":        { "en": "Album",                        "fr": "Album" },
-  "files.sort.title":        { "en": "Title",                        "fr": "Titre" },
-  "files.sort.genre":        { "en": "Genre",                        "fr": "Genre" },
-  "files.sort.year":         { "en": "Year",                         "fr": "Année" },
-  "files.now-playing":       { "en": "Now playing",                  "fr": "En cours de lecture" },
-  "files.sources":           { "en": "Sources",                      "fr": "Sources" },
-  "files.source.internal":   { "en": "Internal",                     "fr": "Interne" },
-  "files.source.removable":  { "en": "Removable",                    "fr": "Amovible" },
-  "files.mount":             { "en": "Mount",                        "fr": "Monter" },
-  "files.unmount":           { "en": "Unmount",                      "fr": "Démonter" },
-  "files.mounted":           { "en": "mounted",                      "fr": "monté" },
-  "files.unmounted":         { "en": "unmounted",                    "fr": "démonté" },
-  "files.lan.add":           { "en": "Add SMB share",                "fr": "Ajouter un partage SMB" },
-  "files.lan.label":         { "en": "Label",                        "fr": "Libellé" },
-  "files.lan.server":        { "en": "Server",                       "fr": "Serveur" },
-  "files.lan.share":         { "en": "Share",                        "fr": "Partage" },
-  "files.lan.subpath":       { "en": "Subpath (optional)",           "fr": "Sous-chemin (optionnel)" },
-  "files.lan.username":      { "en": "Username",                     "fr": "Utilisateur" },
-  "files.lan.password":      { "en": "Password",                     "fr": "Mot de passe" },
-  "files.lan.submit":        { "en": "Add",                          "fr": "Ajouter" },
-  "files.lan.cancel":        { "en": "Cancel",                       "fr": "Annuler" },
-  "files.lan.remove":        { "en": "Remove",                       "fr": "Supprimer" },
-  "files.source.smb":        { "en": "LAN",                          "fr": "Réseau" },
-  "files.artist":            { "en": "Artist",                       "fr": "Artiste" },
-  "files.album":             { "en": "Album",                        "fr": "Album" },
-  "files.year":              { "en": "Year",                         "fr": "Année" },
-  "files.track":             { "en": "Track",                        "fr": "Piste" },
-  "service.mpd":             { "en": "MPD",                          "fr": "MPD" },
-  "mpd.connect":             { "en": "Connect",                      "fr": "Connecter" },
-  "mpd.disconnect":          { "en": "Disconnect",                   "fr": "Déconnecter" },
-  "mpd.connected":           { "en": "connected",                    "fr": "connecté" },
-  "mpd.disconnected":        { "en": "disconnected",                 "fr": "déconnecté" },
-  "mpd.host":                { "en": "Host",                         "fr": "Hôte" },
-  "mpd.port":                { "en": "Port",                         "fr": "Port" },
-  "mpd.password":            { "en": "Password (optional)",          "fr": "Mot de passe (optionnel)" },
-  "mpd.edit":                { "en": "Edit settings",               "fr": "Modifier les réglages" },
-  "mpd.reconnect":           { "en": "Reconnect",                   "fr": "Reconnecter" },
-  "mpd.stream-url":          { "en": "Stream URL (optional)",        "fr": "URL du flux (optionnel)" },
-  "mpd.stream-url-hint":     { "en": "Leave empty to play audio on the MPD server instead of this device.", "fr": "Laisser vide pour lire l'audio sur le serveur MPD plutôt que sur cet appareil." },
-  "mpd.cancel":              { "en": "Cancel",                       "fr": "Annuler" },
-  "mpd.refresh":             { "en": "Refresh library",              "fr": "Actualiser la bibliothèque" },
-  "mpd.no-tracks":           { "en": "No tracks in MPD library.",    "fr": "Aucun titre dans la bibliothèque MPD." },
-  "mpd.no-match":            { "en": "No tracks matching filter.",   "fr": "Aucun titre ne correspond au filtre." },
-  "mpd.filter-placeholder":  { "en": "Filter…",                     "fr": "Filtrer…" },
-
-  "service.subsonic":            { "en": "Subsonic",                      "fr": "Subsonic" },
-  "subsonic.connect":            { "en": "Connect",                       "fr": "Connecter" },
-  "subsonic.disconnect":         { "en": "Disconnect",                    "fr": "Déconnecter" },
-  "subsonic.edit":               { "en": "Edit settings",                 "fr": "Modifier les réglages" },
-  "subsonic.reconnect":          { "en": "Reconnect",                     "fr": "Reconnecter" },
-  "subsonic.connected":          { "en": "connected",                     "fr": "connecté" },
-  "subsonic.disconnected":       { "en": "disconnected",                  "fr": "déconnecté" },
-  "subsonic.server":             { "en": "Server URL",                    "fr": "URL du serveur" },
-  "subsonic.user":               { "en": "Username",                      "fr": "Identifiant" },
-  "subsonic.password":           { "en": "Password",                      "fr": "Mot de passe" },
-  "subsonic.cancel":             { "en": "Cancel",                        "fr": "Annuler" },
-  "subsonic.refresh":            { "en": "Refresh library",               "fr": "Actualiser la bibliothèque" },
-  "subsonic.no-tracks":          { "en": "No tracks in library.",         "fr": "Aucun titre dans la bibliothèque." },
-  "subsonic.no-match":           { "en": "No tracks matching filter.",    "fr": "Aucun titre ne correspond au filtre." },
-  "subsonic.filter-placeholder": { "en": "Filter…",                      "fr": "Filtrer…" },
-
-  "service.spotify":             { "en": "Spotify",                       "fr": "Spotify" },
-  "spotify.authed":              { "en": "connected",                     "fr": "connecté" },
-  "spotify.not-authed":          { "en": "not connected",                 "fr": "non connecté" },
-  "spotify.connect":             { "en": "Connect with Spotify",          "fr": "Connecter avec Spotify" },
-  "spotify.disconnect":          { "en": "Disconnect",                    "fr": "Déconnecter" },
-  "spotify.refresh-library":     { "en": "Refresh library",               "fr": "Actualiser la bibliothèque" },
-  "spotify.list-devices":        { "en": "Devices",                       "fr": "Appareils" },
-  "spotify.use":                 { "en": "Use",                           "fr": "Utiliser" },
-  "spotify.cancel":              { "en": "Close",                         "fr": "Fermer" },
-  "spotify.active-device":       { "en": "Active device",                 "fr": "Appareil actif" },
-  "spotify.playing-on":          { "en": "Playing on:",                   "fr": "Lecture sur :" },
-  "spotify.librespot-stopped":   { "en": "Local device not running",      "fr": "Appareil local non actif" },
-  "spotify.restart-librespot":   { "en": "Restart local device",           "fr": "Redémarrer l'appareil local" },
-  "spotify.use-this-device":     { "en": "Use this device",               "fr": "Utiliser cet appareil" },
-  "spotify.no-tracks":           { "en": "No saved tracks. Connect and click Refresh.", "fr": "Aucun titre sauvegardé. Connectez-vous et cliquez sur Actualiser." },
-  "spotify.no-match":            { "en": "No tracks matching filter.",    "fr": "Aucun titre ne correspond au filtre." },
-  "spotify.filter-placeholder":  { "en": "Filter…",                      "fr": "Filtrer…" },
-
-  "service.podcasts":            { "en": "Podcasts",                      "fr": "Podcasts" },
-  "podcasts.add":                { "en": "Add podcast",                   "fr": "Ajouter un podcast" },
-  "podcasts.feed-url":           { "en": "RSS feed URL",                  "fr": "URL du flux RSS" },
-  "podcasts.subscribe":          { "en": "Subscribe",                     "fr": "S'abonner" },
-  "podcasts.adding":             { "en": "Adding…",                       "fr": "Ajout…" },
-  "podcasts.cancel":             { "en": "Cancel",                        "fr": "Annuler" },
-  "podcasts.unsubscribe":        { "en": "Remove",                        "fr": "Supprimer" },
-  "podcasts.no-feeds":           { "en": "No podcasts yet. Click Add podcast to subscribe.", "fr": "Aucun podcast. Cliquez sur Ajouter un podcast pour vous abonner." },
-  "podcasts.no-episodes":        { "en": "No episodes found.",            "fr": "Aucun épisode trouvé." },
-  "podcasts.loading":            { "en": "Loading…",                      "fr": "Chargement…" },
-  "podcasts.save":               { "en": "Save offline",                   "fr": "Sauvegarder hors-ligne" },
-  "podcasts.saved":              { "en": "Saved offline",                  "fr": "Sauvegardé hors-ligne" },
-  "podcasts.unsave":             { "en": "Remove offline copy",            "fr": "Supprimer la copie locale" },
-  "podcasts.saving":             { "en": "Saving…",                        "fr": "Sauvegarde…" },
-  "podcasts.save-error":         { "en": "Save failed",                    "fr": "Échec de la sauvegarde" },
-  "quota.label":                 { "en": "Offline storage",                "fr": "Stockage hors-ligne" },
-  "quota.of":                    { "en": "of",                             "fr": "sur" },
-
-  "app.services-label":          { "en": "Services:",                     "fr": "Services :" },
-  "app.account":               { "en": "Account",                       "fr": "Compte" },
-
-  "account.title":             { "en": "Account",                       "fr": "Compte" },
-  "account.my-services":       { "en": "My services",                   "fr": "Mes services" },
-  "account.share-admin":       { "en": "Share with admin",              "fr": "Partager avec l'admin" },
-  "account.password":          { "en": "Change password",               "fr": "Changer le mot de passe" },
-  "account.current-password":  { "en": "Current password",              "fr": "Mot de passe actuel" },
-  "account.new-password":      { "en": "New password",                  "fr": "Nouveau mot de passe" },
-  "account.confirm-password":  { "en": "Confirm new password",          "fr": "Confirmer le nouveau mot de passe" },
-  "account.save-password":     { "en": "Save",                          "fr": "Enregistrer" },
-  "account.password-ok":       { "en": "Password changed.",             "fr": "Mot de passe modifié." },
-  "account.password-mismatch": { "en": "Passwords do not match.",       "fr": "Les mots de passe ne correspondent pas." },
-  "account.password-empty":    { "en": "Password cannot be empty.",     "fr": "Le mot de passe ne peut pas être vide." },
-  "account.password-error":    { "en": "Error changing password.",      "fr": "Erreur lors du changement de mot de passe." },
-  "account.simulated":         { "en": "(simulated in demo)",           "fr": "(simulé en démo)" },
-
-  "screen.locking":            { "en": "Locking & turning off screen",  "fr": "Verrouillage & extinction de l'écran" },
-  "screen.pick-user":          { "en": "Who are you?",                 "fr": "Qui êtes-vous ?" },
-  "screen.device-locked":      { "en": "Device locked by administrator.", "fr": "Appareil verrouillé par l'administrateur." },
-
-  "session.logged-in-as":      { "en": "▸ {user}",                    "fr": "▸ {user}" },
-  "session.lock":              { "en": "Lock",                         "fr": "Verrouiller" },
-
-  "shell.back":                   { "en": "Back",                           "fr": "Retour" },
-  "shell.settings":               { "en": "Settings",                       "fr": "Paramètres" },
-  "shell.logout":                 { "en": "Log out",                        "fr": "Se déconnecter" },
-  "shell.no-services":            { "en": "No services enabled.",           "fr": "Aucun service activé." },
-  "shell.power-confirm":          { "en": "Power off the device?",          "fr": "Éteindre l'appareil ?" },
-  "shell.cancel":                 { "en": "Cancel",                         "fr": "Annuler" },
-  "shell.connectivity.wifi":      { "en": "Wi-Fi",                          "fr": "Wi-Fi" },
-  "shell.connectivity.bt":        { "en": "Bluetooth",                      "fr": "Bluetooth" },
-  "shell.connectivity.stub":      { "en": "Connectivity configuration will be available in a future update.", "fr": "La configuration de la connectivité sera disponible dans une prochaine mise à jour." },
-
-  "power.poweroff":            { "en": "Power off",                     "fr": "Éteindre" },
-  "power.suspend":             { "en": "Suspend",                       "fr": "Veille" },
-  "power.hibernate":           { "en": "Hibernate",                     "fr": "Hibernation" },
-  "power.simulated":           { "en": "Simulated: would {action} the device", "fr": "Simulé : appareil en {action}" },
-
-  "service.radio":               { "en": "Radio",                         "fr": "Radio" },
-  "radio.search":                { "en": "Search",                        "fr": "Rechercher" },
-  "radio.search-placeholder":    { "en": "Station name…",                 "fr": "Nom de la station…" },
-  "radio.popular":               { "en": "Top stations",                  "fr": "Stations populaires" },
-  "radio.favorites":             { "en": "Favorites",                     "fr": "Favoris" },
-  "radio.favorite":              { "en": "Add to favorites",              "fr": "Ajouter aux favoris" },
-  "radio.unfavorite":            { "en": "Remove from favorites",         "fr": "Retirer des favoris" },
-  "radio.live":                  { "en": "LIVE",                         "fr": "LIVE" },
-  "radio.loading":               { "en": "Loading…",                     "fr": "Chargement…" },
-  "radio.no-results":            { "en": "No stations found.",            "fr": "Aucune station trouvée." },
-  "radio.no-favorites":          { "en": "No favorites yet. Click ★ on a station to save it.", "fr": "Aucun favori. Cliquez sur ★ pour en ajouter." },
-  "radio.no-somafm":             { "en": "Could not load SomaFM channels.", "fr": "Impossible de charger les chaînes SomaFM." },
-  "radio.filter-placeholder":    { "en": "Filter…",                         "fr": "Filtrer…" },
-  "radio.select-station":        { "en": "Select a station to play.",        "fr": "Sélectionnez une station." },
-
-  "admin.login":                 { "en": "Admin",                               "fr": "Admin" },
-  "admin.enter-password":        { "en": "Admin password",                      "fr": "Mot de passe admin" },
-  "admin.wrong-password":        { "en": "Wrong password.",                     "fr": "Mot de passe incorrect." },
-  "admin.stub":                  { "en": "Not yet implemented.",                "fr": "Pas encore implémenté." },
-  "admin.tab.users":             { "en": "User Management",                    "fr": "Utilisateurs" },
-  "admin.tab.services":          { "en": "Services",                           "fr": "Services" },
-  "admin.tab.network":           { "en": "Network",                            "fr": "Réseau" },
-  "admin.tab.device":            { "en": "Device",                             "fr": "Appareil" },
-  "admin.reauth.title":          { "en": "Confirm identity",                   "fr": "Confirmation d'identité" },
-  "admin.reauth.reason":         { "en": "This action requires your password.", "fr": "Cette action requiert votre mot de passe." },
-  "admin.reauth.confirm":        { "en": "Confirm",                            "fr": "Confirmer" },
-  "admin.reauth.cancel":         { "en": "Cancel",                             "fr": "Annuler" },
-
-  "admin.users.add-user":        { "en": "Add user",                           "fr": "Ajouter un utilisateur" },
-  "admin.users.username":        { "en": "Username",                           "fr": "Nom d'utilisateur" },
-  "admin.users.password":        { "en": "Password",                           "fr": "Mot de passe" },
-  "admin.users.create":          { "en": "Create",                             "fr": "Créer" },
-  "admin.users.status":          { "en": "Status",                             "fr": "État" },
-  "admin.users.active":          { "en": "Active",                             "fr": "Actif" },
-  "admin.users.disabled":        { "en": "Disabled",                           "fr": "Désactivé" },
-  "admin.users.enable":          { "en": "Enable",                             "fr": "Activer" },
-  "admin.users.disable":         { "en": "Disable",                            "fr": "Désactiver" },
-  "admin.users.delete":          { "en": "Delete user",                        "fr": "Supprimer l'utilisateur" },
-  "admin.users.new-password":    { "en": "New password",                       "fr": "Nouveau mot de passe" },
-  "admin.users.set":             { "en": "Set",                                "fr": "Appliquer" },
-  "admin.users.quota":           { "en": "Quota (MB)",                         "fr": "Quota (Mo)" },
-  "admin.users.allowed-services":{ "en": "Allowed services",                   "fr": "Services autorisés" },
-  "admin.users.bluetooth":       { "en": "Bluetooth",                          "fr": "Bluetooth" },
-  "admin.users.wifi":            { "en": "Wi-Fi (connect)",                    "fr": "Wi-Fi (connexion)" },
-  "admin.users.wifi-add":        { "en": "Wi-Fi (add networks)",               "fr": "Wi-Fi (ajout réseaux)" },
-  "admin.users.saved":           { "en": "Saved.",                             "fr": "Enregistré." },
-  "admin.users.err-failed":      { "en": "Save failed.",                       "fr": "Échec de l'enregistrement." },
-  "admin.users.err-exists":      { "en": "Username already exists.",           "fr": "Ce nom d'utilisateur existe déjà." },
-  "admin.users.err-invalid":     { "en": "Invalid username.",                  "fr": "Nom d'utilisateur invalide." },
-  "admin.users.parental.explicit-filter": { "en": "Block explicit content",    "fr": "Filtrer le contenu explicite" },
-  "admin.users.parental.schedule":        { "en": "Allowed hours (start–end)", "fr": "Heures autorisées (début–fin)" },
-  "admin.users.parental.daily-limit":     { "en": "Daily limit (min)",         "fr": "Limite quotidienne (min)" },
-  "admin.users.parental.clear":           { "en": "Clear",                     "fr": "Effacer" },
-
-  "admin.services.enabled":      { "en": "Enabled",                           "fr": "Activé" },
-  "admin.services.disabled":     { "en": "Disabled",                          "fr": "Désactivé" },
-  "admin.services.credentials":  { "en": "Credentials",                       "fr": "Identifiants" },
-  "admin.services.saved":        { "en": "Saved.",                             "fr": "Enregistré." },
-  "admin.services.err-failed":   { "en": "Save failed.",                       "fr": "Échec de l'enregistrement." },
-  "admin.services.matrix-title": { "en": "User access",                        "fr": "Accès par utilisateur" },
-
-  "admin.services.cred.host":       { "en": "Host",        "fr": "Hôte" },
-  "admin.services.cred.port":       { "en": "Port",        "fr": "Port" },
-  "admin.services.cred.password":   { "en": "Password",    "fr": "Mot de passe" },
-  "admin.services.cred.stream_url": { "en": "Stream URL",  "fr": "URL du flux" },
-  "admin.services.cred.server":     { "en": "Server",      "fr": "Serveur" },
-  "admin.services.cred.user":       { "en": "Username",    "fr": "Nom d'utilisateur" },
-  "admin.services.cred.client_id":  { "en": "Client ID",   "fr": "Client ID" },
-
-  "admin.network.policy-title":     { "en": "Global Wi-Fi policy",                 "fr": "Politique Wi-Fi globale" },
-  "admin.network.wifi-connect":     { "en": "Allow users to connect to Wi-Fi",     "fr": "Autoriser la connexion Wi-Fi" },
-  "admin.network.wifi-connect-note":{ "en": "Applies to all users; per-user Wi-Fi toggle still applies.", "fr": "S'applique à tous ; le réglage par utilisateur reste actif." },
-  "admin.network.wifi-add":         { "en": "Allow users to add Wi-Fi networks",   "fr": "Autoriser l'ajout de réseaux Wi-Fi" },
-  "admin.network.wifi-add-note":    { "en": "Forbidden by default.",               "fr": "Interdit par défaut." },
-  "admin.network.user-access":      { "en": "Per-user effective access",           "fr": "Accès effectif par utilisateur" },
-  "admin.network.col-connect":      { "en": "Connect",                             "fr": "Connexion" },
-  "admin.network.col-add":          { "en": "Add networks",                        "fr": "Ajout de réseaux" },
-  "admin.network.networks-title":   { "en": "System Wi-Fi networks",               "fr": "Réseaux Wi-Fi système" },
-  "admin.network.no-networks":      { "en": "No system networks configured.",      "fr": "Aucun réseau système configuré." },
-  "admin.network.scope-system":     { "en": "All users",                           "fr": "Tous les utilisateurs" },
-  "admin.network.scope-admin":      { "en": "Admin only",                          "fr": "Admin uniquement" },
-  "admin.network.add-network":      { "en": "Add network",                         "fr": "Ajouter un réseau" },
-  "admin.network.ssid":             { "en": "SSID",                                "fr": "SSID" },
-  "admin.network.security":         { "en": "Security",                            "fr": "Sécurité" },
-  "admin.network.scope":            { "en": "Scope",                               "fr": "Portée" },
-  "admin.network.err-exists":       { "en": "Network already exists.",             "fr": "Ce réseau existe déjà." },
-  "admin.network.err-invalid-ssid": { "en": "Invalid SSID.",                       "fr": "SSID invalide." },
-
-  "admin.device.info-title":        { "en": "Device information",                  "fr": "Informations sur l'appareil" },
-  "admin.device.target":            { "en": "Target",                              "fr": "Cible" },
-  "admin.device.target-demo":       { "en": "Target 1 — development demo",         "fr": "Cible 1 — démo de développement" },
-  "admin.device.note":              { "en": "Note",                                "fr": "Remarque" },
-  "admin.device.note-text":         { "en": "Hardware actions are available on Target 2 (production).", "fr": "Les actions matérielles sont disponibles sur la cible 2 (production)." },
-  "admin.device.default-quota-title":{ "en": "New user default quota",             "fr": "Quota par défaut des nouveaux utilisateurs" },
-  "admin.device.saved":             { "en": "Saved.",                              "fr": "Enregistré." },
-  "admin.device.actions-title":     { "en": "Device actions",                      "fr": "Actions sur l'appareil" },
-  "admin.device.not-in-demo":       { "en": "Not available in demo.",              "fr": "Non disponible en mode démo." },
-  "admin.device.action-format-drive":{ "en": "Format removable drive",             "fr": "Formater le support amovible" },
-  "admin.device.action-update-app": { "en": "Update app",                          "fr": "Mettre à jour l'application" },
-  "admin.device.action-fsck":       { "en": "Check filesystem (fsck)",             "fr": "Vérifier le système de fichiers (fsck)" },
-  "admin.device.action-reinstall":  { "en": "Reinstall app",                       "fr": "Réinstaller l'application" },
-
-  "admin.device.lock-title":          { "en": "Device lock",                         "fr": "Verrouillage de l'appareil" },
-  "admin.device.lock-inactive":       { "en": "Unlocked — users can log in normally.", "fr": "Déverrouillé — les utilisateurs peuvent se connecter normalement." },
-  "admin.device.lock-active":         { "en": "Locked — only admin can log in.",      "fr": "Verrouillé — seul l'administrateur peut se connecter." },
-  "admin.device.lock-until":          { "en": "until",                                "fr": "jusqu'au" },
-  "admin.device.lock-mode-indefinite":{ "en": "Indefinitely",                         "fr": "Indéfiniment" },
-  "admin.device.lock-mode-duration":  { "en": "For",                                  "fr": "Pendant" },
-  "admin.device.lock-minutes":        { "en": "minutes",                              "fr": "minutes" },
-  "admin.device.lock-mode-until":     { "en": "Until date/time",                      "fr": "Jusqu'à une date/heure" },
-  "admin.device.lock-btn":            { "en": "Lock device",                          "fr": "Verrouiller l'appareil" },
-  "admin.device.unlock-btn":          { "en": "Unlock device",                        "fr": "Déverrouiller l'appareil" },
-
-  "admin.tab.audit":                  { "en": "Audit log",                            "fr": "Journal d'audit" },
-  "admin.audit.title":                { "en": "Audit log",                            "fr": "Journal d'audit" },
-  "admin.audit.refresh":              { "en": "Refresh",                              "fr": "Actualiser" },
-  "admin.audit.empty":                { "en": "No entries yet.",                      "fr": "Aucune entrée pour l'instant." },
-  "admin.audit.col-time":             { "en": "Time",                                 "fr": "Heure" },
-  "admin.audit.col-actor":            { "en": "Actor",                                "fr": "Utilisateur" },
-  "admin.audit.col-action":           { "en": "Action",                               "fr": "Action" },
-  "admin.audit.col-detail":           { "en": "Detail",                               "fr": "Détail" },
-  "admin.audit.action.login":         { "en": "Login",                                "fr": "Connexion" },
-  "admin.audit.action.device-lock":   { "en": "Device locked",                        "fr": "Appareil verrouillé" },
-  "admin.audit.action.device-unlock": { "en": "Device unlocked",                      "fr": "Appareil déverrouillé" },
-  "admin.audit.action.user-create":   { "en": "User created",                         "fr": "Utilisateur créé" },
-  "admin.audit.action.user-delete":   { "en": "User deleted",                         "fr": "Utilisateur supprimé" },
-  "admin.audit.action.user-disable":  { "en": "User disabled",                        "fr": "Utilisateur désactivé" },
-  "admin.audit.action.user-enable":   { "en": "User enabled",                         "fr": "Utilisateur réactivé" },
-  "admin.audit.action.service-enable":{ "en": "Service enabled",                      "fr": "Service activé" },
-  "admin.audit.action.service-disable":{ "en": "Service disabled",                    "fr": "Service désactivé" },
-
-  "admin.tab.terminal":               { "en": "Terminal",                             "fr": "Terminal" },
-  "admin.terminal.info":              { "en": "Opens a shell running as the current system user (demo). Re-authentication is required.", "fr": "Ouvre un shell sous l'utilisateur système courant (démo). Une ré-authentification est requise." },
-  "admin.terminal.meta":              { "en": "Session closes automatically after 60 seconds of inactivity or 10 minutes total.", "fr": "La session se ferme automatiquement après 60 secondes d'inactivité ou 10 minutes au total." },
-  "admin.terminal.open":              { "en": "Open terminal",                        "fr": "Ouvrir le terminal" },
-  "admin.terminal.close":             { "en": "Close terminal",                       "fr": "Fermer le terminal" },
-  "admin.terminal.closed":            { "en": "Terminal session ended.",              "fr": "Session de terminal terminée." },
-
-  "admin.backup.title":               { "en": "Config backup",                        "fr": "Sauvegarde de configuration" },
-  "admin.backup.note":                { "en": "Backs up users, services, network and device settings. Encrypted with AES-256-GCM. Re-authentication required.", "fr": "Sauvegarde les utilisateurs, services, réseau et paramètres de l'appareil. Chiffré avec AES-256-GCM. Ré-authentification requise." },
-  "admin.backup.export-title":        { "en": "Export",                               "fr": "Exporter" },
-  "admin.backup.import-title":        { "en": "Import",                               "fr": "Importer" },
-  "admin.backup.passphrase-placeholder":{ "en": "Passphrase (min 8 chars)",           "fr": "Phrase secrète (min 8 caractères)" },
-  "admin.backup.export-btn":          { "en": "Download backup",                      "fr": "Télécharger la sauvegarde" },
-  "admin.backup.import-btn":          { "en": "Restore backup",                       "fr": "Restaurer la sauvegarde" },
-  "admin.backup.strength-weak":       { "en": "Weak",                                 "fr": "Faible" },
-  "admin.backup.strength-fair":       { "en": "Fair",                                 "fr": "Passable" },
-  "admin.backup.strength-good":       { "en": "Good",                                 "fr": "Bonne" },
-  "admin.backup.strength-strong":     { "en": "Strong",                               "fr": "Forte" },
-  "admin.backup.exported":            { "en": "Backup downloaded.",                   "fr": "Sauvegarde téléchargée." },
-  "admin.backup.imported":            { "en": "Backup restored. Config reloaded.",    "fr": "Sauvegarde restaurée. Configuration rechargée." },
-  "admin.backup.err-short":           { "en": "Passphrase must be at least 8 characters.", "fr": "La phrase secrète doit comporter au moins 8 caractères." },
-  "admin.backup.err-export":          { "en": "Export failed.",                       "fr": "Échec de l'export." },
-  "admin.backup.err-no-file":         { "en": "Please select a backup file.",         "fr": "Veuillez sélectionner un fichier de sauvegarde." },
-  "admin.backup.err-parse":           { "en": "Invalid backup file.",                 "fr": "Fichier de sauvegarde invalide." },
-  "admin.backup.err-decrypt":         { "en": "Wrong passphrase or corrupted file.",  "fr": "Phrase secrète incorrecte ou fichier corrompu." },
-  "admin.backup.err-restore":         { "en": "Restore failed.",                      "fr": "Échec de la restauration." },
-
-  "service.playlists":                { "en": "Playlists",                            "fr": "Listes de lecture" },
-  "playlists.add-to":                 { "en": "Add to playlist",                      "fr": "Ajouter à une liste" },
-  "playlists.browse":                 { "en": "Playlists",                            "fr": "Listes de lecture" },
-  "playlists.new":                    { "en": "New playlist",                         "fr": "Nouvelle liste" },
-  "playlists.empty":                  { "en": "No playlists yet.",                    "fr": "Aucune liste de lecture." },
-  "playlists.no-selection":           { "en": "Select or drag tracks first.",         "fr": "Sélectionnez ou faites glisser des pistes d'abord." },
-  "playlists.play-all":               { "en": "Play all",                             "fr": "Tout lire" },
-  "playlists.add-all":                { "en": "Add all to queue",                     "fr": "Tout ajouter à la file" },
-  "playlists.import":                 { "en": "Import",                               "fr": "Importer" },
-  "playlists.export":                 { "en": "Export",                               "fr": "Exporter" },
-  "playlists.rename":                 { "en": "Rename",                               "fr": "Renommer" },
-  "playlists.delete":                 { "en": "Delete playlist",                      "fr": "Supprimer la liste" },
-  "playlists.added":                  { "en": "Added to",                             "fr": "Ajouté à" },
-  "playlists.no-tracks":              { "en": "This playlist is empty.",              "fr": "Cette liste est vide." },
-  "playlists.err-load":               { "en": "Could not load playlists.",            "fr": "Impossible de charger les listes." }
+  "account.confirm-password": {
+    "en": "Confirm new password",
+    "fr": "Confirmer le nouveau mot de passe"
+  },
+  "account.current-password": {
+    "en": "Current password",
+    "fr": "Mot de passe actuel"
+  },
+  "account.my-services": {
+    "en": "My services",
+    "fr": "Mes services"
+  },
+  "account.new-password": {
+    "en": "New password",
+    "fr": "Nouveau mot de passe"
+  },
+  "account.password": {
+    "en": "Change password",
+    "fr": "Changer le mot de passe"
+  },
+  "account.password-empty": {
+    "en": "Password cannot be empty.",
+    "fr": "Le mot de passe ne peut pas être vide."
+  },
+  "account.password-error": {
+    "en": "Error changing password.",
+    "fr": "Erreur lors du changement de mot de passe."
+  },
+  "account.password-mismatch": {
+    "en": "Passwords do not match.",
+    "fr": "Les mots de passe ne correspondent pas."
+  },
+  "account.password-ok": {
+    "en": "Password changed.",
+    "fr": "Mot de passe modifié."
+  },
+  "account.save-password": {
+    "en": "Save",
+    "fr": "Enregistrer"
+  },
+  "account.share-admin": {
+    "en": "Share with admin",
+    "fr": "Partager avec l'admin"
+  },
+  "account.simulated": {
+    "en": "(simulated in demo)",
+    "fr": "(simulé en démo)"
+  },
+  "account.title": {
+    "en": "Account",
+    "fr": "Compte"
+  },
+  "admin.audit.action.device-lock": {
+    "en": "Device locked",
+    "fr": "Appareil verrouillé"
+  },
+  "admin.audit.action.device-unlock": {
+    "en": "Device unlocked",
+    "fr": "Appareil déverrouillé"
+  },
+  "admin.audit.action.login": {
+    "en": "Login",
+    "fr": "Connexion"
+  },
+  "admin.audit.action.service-disable": {
+    "en": "Service disabled",
+    "fr": "Service désactivé"
+  },
+  "admin.audit.action.service-enable": {
+    "en": "Service enabled",
+    "fr": "Service activé"
+  },
+  "admin.audit.action.user-create": {
+    "en": "User created",
+    "fr": "Utilisateur créé"
+  },
+  "admin.audit.action.user-delete": {
+    "en": "User deleted",
+    "fr": "Utilisateur supprimé"
+  },
+  "admin.audit.action.user-disable": {
+    "en": "User disabled",
+    "fr": "Utilisateur désactivé"
+  },
+  "admin.audit.action.user-enable": {
+    "en": "User enabled",
+    "fr": "Utilisateur réactivé"
+  },
+  "admin.audit.col-action": {
+    "en": "Action",
+    "fr": "Action"
+  },
+  "admin.audit.col-actor": {
+    "en": "Actor",
+    "fr": "Utilisateur"
+  },
+  "admin.audit.col-detail": {
+    "en": "Detail",
+    "fr": "Détail"
+  },
+  "admin.audit.col-time": {
+    "en": "Time",
+    "fr": "Heure"
+  },
+  "admin.audit.empty": {
+    "en": "No entries yet.",
+    "fr": "Aucune entrée pour l'instant."
+  },
+  "admin.audit.refresh": {
+    "en": "Refresh",
+    "fr": "Actualiser"
+  },
+  "admin.audit.title": {
+    "en": "Audit log",
+    "fr": "Journal d'audit"
+  },
+  "admin.backup.err-decrypt": {
+    "en": "Wrong passphrase or corrupted file.",
+    "fr": "Phrase secrète incorrecte ou fichier corrompu."
+  },
+  "admin.backup.err-export": {
+    "en": "Export failed.",
+    "fr": "Échec de l'export."
+  },
+  "admin.backup.err-no-file": {
+    "en": "Please select a backup file.",
+    "fr": "Veuillez sélectionner un fichier de sauvegarde."
+  },
+  "admin.backup.err-parse": {
+    "en": "Invalid backup file.",
+    "fr": "Fichier de sauvegarde invalide."
+  },
+  "admin.backup.err-restore": {
+    "en": "Restore failed.",
+    "fr": "Échec de la restauration."
+  },
+  "admin.backup.err-short": {
+    "en": "Passphrase must be at least 8 characters.",
+    "fr": "La phrase secrète doit comporter au moins 8 caractères."
+  },
+  "admin.backup.export-btn": {
+    "en": "Download backup",
+    "fr": "Télécharger la sauvegarde"
+  },
+  "admin.backup.export-title": {
+    "en": "Export",
+    "fr": "Exporter"
+  },
+  "admin.backup.exported": {
+    "en": "Backup downloaded.",
+    "fr": "Sauvegarde téléchargée."
+  },
+  "admin.backup.import-btn": {
+    "en": "Restore backup",
+    "fr": "Restaurer la sauvegarde"
+  },
+  "admin.backup.import-title": {
+    "en": "Import",
+    "fr": "Importer"
+  },
+  "admin.backup.imported": {
+    "en": "Backup restored. Config reloaded.",
+    "fr": "Sauvegarde restaurée. Configuration rechargée."
+  },
+  "admin.backup.note": {
+    "en": "Backs up users, services, network and device settings. Encrypted with AES-256-GCM. Re-authentication required.",
+    "fr": "Sauvegarde les utilisateurs, services, réseau et paramètres de l'appareil. Chiffré avec AES-256-GCM. Ré-authentification requise."
+  },
+  "admin.backup.passphrase-placeholder": {
+    "en": "Passphrase (min 8 chars)",
+    "fr": "Phrase secrète (min 8 caractères)"
+  },
+  "admin.backup.strength-fair": {
+    "en": "Fair",
+    "fr": "Passable"
+  },
+  "admin.backup.strength-good": {
+    "en": "Good",
+    "fr": "Bonne"
+  },
+  "admin.backup.strength-strong": {
+    "en": "Strong",
+    "fr": "Forte"
+  },
+  "admin.backup.strength-weak": {
+    "en": "Weak",
+    "fr": "Faible"
+  },
+  "admin.backup.title": {
+    "en": "Config backup",
+    "fr": "Sauvegarde de configuration"
+  },
+  "admin.device.action-format-drive": {
+    "en": "Format removable drive",
+    "fr": "Formater le support amovible"
+  },
+  "admin.device.action-fsck": {
+    "en": "Check filesystem (fsck)",
+    "fr": "Vérifier le système de fichiers (fsck)"
+  },
+  "admin.device.action-reinstall": {
+    "en": "Reinstall app",
+    "fr": "Réinstaller l'application"
+  },
+  "admin.device.action-update-app": {
+    "en": "Update app",
+    "fr": "Mettre à jour l'application"
+  },
+  "admin.device.actions-title": {
+    "en": "Device actions",
+    "fr": "Actions sur l'appareil"
+  },
+  "admin.device.default-quota-title": {
+    "en": "New user default quota",
+    "fr": "Quota par défaut des nouveaux utilisateurs"
+  },
+  "admin.device.info-title": {
+    "en": "Device information",
+    "fr": "Informations sur l'appareil"
+  },
+  "admin.device.lock-active": {
+    "en": "Locked — only admin can log in.",
+    "fr": "Verrouillé — seul l'administrateur peut se connecter."
+  },
+  "admin.device.lock-btn": {
+    "en": "Lock device",
+    "fr": "Verrouiller l'appareil"
+  },
+  "admin.device.lock-inactive": {
+    "en": "Unlocked — users can log in normally.",
+    "fr": "Déverrouillé — les utilisateurs peuvent se connecter normalement."
+  },
+  "admin.device.lock-minutes": {
+    "en": "minutes",
+    "fr": "minutes"
+  },
+  "admin.device.lock-mode-duration": {
+    "en": "For",
+    "fr": "Pendant"
+  },
+  "admin.device.lock-mode-indefinite": {
+    "en": "Indefinitely",
+    "fr": "Indéfiniment"
+  },
+  "admin.device.lock-mode-until": {
+    "en": "Until date/time",
+    "fr": "Jusqu'à une date/heure"
+  },
+  "admin.device.lock-title": {
+    "en": "Device lock",
+    "fr": "Verrouillage de l'appareil"
+  },
+  "admin.device.lock-until": {
+    "en": "until",
+    "fr": "jusqu'au"
+  },
+  "admin.device.not-in-demo": {
+    "en": "Not available in demo.",
+    "fr": "Non disponible en mode démo."
+  },
+  "admin.device.note": {
+    "en": "Note",
+    "fr": "Remarque"
+  },
+  "admin.device.note-text": {
+    "en": "Hardware actions are available on Target 2 (production).",
+    "fr": "Les actions matérielles sont disponibles sur la cible 2 (production)."
+  },
+  "admin.device.saved": {
+    "en": "Saved.",
+    "fr": "Enregistré."
+  },
+  "admin.device.target": {
+    "en": "Target",
+    "fr": "Cible"
+  },
+  "admin.device.target-demo": {
+    "en": "Target 1 — development demo",
+    "fr": "Cible 1 — démo de développement"
+  },
+  "admin.device.unlock-btn": {
+    "en": "Unlock device",
+    "fr": "Déverrouiller l'appareil"
+  },
+  "admin.enter-password": {
+    "en": "Admin password",
+    "fr": "Mot de passe admin"
+  },
+  "admin.login": {
+    "en": "Admin",
+    "fr": "Admin"
+  },
+  "admin.network.add-network": {
+    "en": "Add network",
+    "fr": "Ajouter un réseau"
+  },
+  "admin.network.col-add": {
+    "en": "Add networks",
+    "fr": "Ajout de réseaux"
+  },
+  "admin.network.col-connect": {
+    "en": "Connect",
+    "fr": "Connexion"
+  },
+  "admin.network.err-exists": {
+    "en": "Network already exists.",
+    "fr": "Ce réseau existe déjà."
+  },
+  "admin.network.err-invalid-ssid": {
+    "en": "Invalid SSID.",
+    "fr": "SSID invalide."
+  },
+  "admin.network.networks-title": {
+    "en": "System Wi-Fi networks",
+    "fr": "Réseaux Wi-Fi système"
+  },
+  "admin.network.no-networks": {
+    "en": "No system networks configured.",
+    "fr": "Aucun réseau système configuré."
+  },
+  "admin.network.policy-title": {
+    "en": "Global Wi-Fi policy",
+    "fr": "Politique Wi-Fi globale"
+  },
+  "admin.network.scope": {
+    "en": "Scope",
+    "fr": "Portée"
+  },
+  "admin.network.scope-admin": {
+    "en": "Admin only",
+    "fr": "Admin uniquement"
+  },
+  "admin.network.scope-system": {
+    "en": "All users",
+    "fr": "Tous les utilisateurs"
+  },
+  "admin.network.security": {
+    "en": "Security",
+    "fr": "Sécurité"
+  },
+  "admin.network.ssid": {
+    "en": "SSID",
+    "fr": "SSID"
+  },
+  "admin.network.user-access": {
+    "en": "Per-user effective access",
+    "fr": "Accès effectif par utilisateur"
+  },
+  "admin.network.wifi-add": {
+    "en": "Allow users to add Wi-Fi networks",
+    "fr": "Autoriser l'ajout de réseaux Wi-Fi"
+  },
+  "admin.network.wifi-add-note": {
+    "en": "Forbidden by default.",
+    "fr": "Interdit par défaut."
+  },
+  "admin.network.wifi-connect": {
+    "en": "Allow users to connect to Wi-Fi",
+    "fr": "Autoriser la connexion Wi-Fi"
+  },
+  "admin.network.wifi-connect-note": {
+    "en": "Applies to all users; per-user Wi-Fi toggle still applies.",
+    "fr": "S'applique à tous ; le réglage par utilisateur reste actif."
+  },
+  "admin.reauth.cancel": {
+    "en": "Cancel",
+    "fr": "Annuler"
+  },
+  "admin.reauth.confirm": {
+    "en": "Confirm",
+    "fr": "Confirmer"
+  },
+  "admin.reauth.reason": {
+    "en": "This action requires your password.",
+    "fr": "Cette action requiert votre mot de passe."
+  },
+  "admin.reauth.title": {
+    "en": "Confirm identity",
+    "fr": "Confirmation d'identité"
+  },
+  "admin.services.cred.client_id": {
+    "en": "Client ID",
+    "fr": "Client ID"
+  },
+  "admin.services.cred.host": {
+    "en": "Host",
+    "fr": "Hôte"
+  },
+  "admin.services.cred.password": {
+    "en": "Password",
+    "fr": "Mot de passe"
+  },
+  "admin.services.cred.port": {
+    "en": "Port",
+    "fr": "Port"
+  },
+  "admin.services.cred.server": {
+    "en": "Server",
+    "fr": "Serveur"
+  },
+  "admin.services.cred.stream_url": {
+    "en": "Stream URL",
+    "fr": "URL du flux"
+  },
+  "admin.services.cred.user": {
+    "en": "Username",
+    "fr": "Nom d'utilisateur"
+  },
+  "admin.services.credentials": {
+    "en": "Credentials",
+    "fr": "Identifiants"
+  },
+  "admin.services.disabled": {
+    "en": "Disabled",
+    "fr": "Désactivé"
+  },
+  "admin.services.enabled": {
+    "en": "Enabled",
+    "fr": "Activé"
+  },
+  "admin.services.err-failed": {
+    "en": "Save failed.",
+    "fr": "Échec de l'enregistrement."
+  },
+  "admin.services.matrix-title": {
+    "en": "User access",
+    "fr": "Accès par utilisateur"
+  },
+  "admin.services.saved": {
+    "en": "Saved.",
+    "fr": "Enregistré."
+  },
+  "admin.stub": {
+    "en": "Not yet implemented.",
+    "fr": "Pas encore implémenté."
+  },
+  "admin.tab.audit": {
+    "en": "Audit log",
+    "fr": "Journal d'audit"
+  },
+  "admin.tab.device": {
+    "en": "Device",
+    "fr": "Appareil"
+  },
+  "admin.tab.network": {
+    "en": "Network",
+    "fr": "Réseau"
+  },
+  "admin.tab.services": {
+    "en": "Services",
+    "fr": "Services"
+  },
+  "admin.tab.terminal": {
+    "en": "Terminal",
+    "fr": "Terminal"
+  },
+  "admin.tab.users": {
+    "en": "User Management",
+    "fr": "Utilisateurs"
+  },
+  "admin.terminal.close": {
+    "en": "Close terminal",
+    "fr": "Fermer le terminal"
+  },
+  "admin.terminal.closed": {
+    "en": "Terminal session ended.",
+    "fr": "Session de terminal terminée."
+  },
+  "admin.terminal.info": {
+    "en": "Opens a shell running as the current system user (demo). Re-authentication is required.",
+    "fr": "Ouvre un shell sous l'utilisateur système courant (démo). Une ré-authentification est requise."
+  },
+  "admin.terminal.meta": {
+    "en": "Session closes automatically after 60 seconds of inactivity or 10 minutes total.",
+    "fr": "La session se ferme automatiquement après 60 secondes d'inactivité ou 10 minutes au total."
+  },
+  "admin.terminal.open": {
+    "en": "Open terminal",
+    "fr": "Ouvrir le terminal"
+  },
+  "admin.update.available": {
+    "en": "Update available:",
+    "fr": "Mise à jour disponible :"
+  },
+  "admin.update.changelog": {
+    "en": "Changelog",
+    "fr": "Changements"
+  },
+  "admin.update.check": {
+    "en": "Check for updates",
+    "fr": "Vérifier les mises à jour"
+  },
+  "admin.update.checking": {
+    "en": "Checking...",
+    "fr": "Vérification..."
+  },
+  "admin.update.current-version": {
+    "en": "Current version",
+    "fr": "Version actuelle"
+  },
+  "admin.update.error": {
+    "en": "Update check failed.",
+    "fr": "Échec de la vérification."
+  },
+  "admin.update.install": {
+    "en": "Install",
+    "fr": "Installer"
+  },
+  "admin.update.installing": {
+    "en": "Installing...",
+    "fr": "Installation..."
+  },
+  "admin.update.success": {
+    "en": "Updated to version {v}. The device will restart.",
+    "fr": "Mis à jour vers la version {v}. L'appareil va redémarrer."
+  },
+  "admin.update.title": {
+    "en": "App update",
+    "fr": "Mise à jour de l'application"
+  },
+  "admin.update.up-to-date": {
+    "en": "Up to date",
+    "fr": "À jour"
+  },
+  "admin.users.active": {
+    "en": "Active",
+    "fr": "Actif"
+  },
+  "admin.users.add-user": {
+    "en": "Add user",
+    "fr": "Ajouter un utilisateur"
+  },
+  "admin.users.allowed-services": {
+    "en": "Allowed services",
+    "fr": "Services autorisés"
+  },
+  "admin.users.bluetooth": {
+    "en": "Bluetooth",
+    "fr": "Bluetooth"
+  },
+  "admin.users.create": {
+    "en": "Create",
+    "fr": "Créer"
+  },
+  "admin.users.delete": {
+    "en": "Delete user",
+    "fr": "Supprimer l'utilisateur"
+  },
+  "admin.users.disable": {
+    "en": "Disable",
+    "fr": "Désactiver"
+  },
+  "admin.users.disabled": {
+    "en": "Disabled",
+    "fr": "Désactivé"
+  },
+  "admin.users.enable": {
+    "en": "Enable",
+    "fr": "Activer"
+  },
+  "admin.users.err-exists": {
+    "en": "Username already exists.",
+    "fr": "Ce nom d'utilisateur existe déjà."
+  },
+  "admin.users.err-failed": {
+    "en": "Save failed.",
+    "fr": "Échec de l'enregistrement."
+  },
+  "admin.users.err-invalid": {
+    "en": "Invalid username.",
+    "fr": "Nom d'utilisateur invalide."
+  },
+  "admin.users.new-password": {
+    "en": "New password",
+    "fr": "Nouveau mot de passe"
+  },
+  "admin.users.parental.clear": {
+    "en": "Clear",
+    "fr": "Effacer"
+  },
+  "admin.users.parental.daily-limit": {
+    "en": "Daily limit (min)",
+    "fr": "Limite quotidienne (min)"
+  },
+  "admin.users.parental.explicit-filter": {
+    "en": "Block explicit content",
+    "fr": "Filtrer le contenu explicite"
+  },
+  "admin.users.parental.schedule": {
+    "en": "Allowed hours (start–end)",
+    "fr": "Heures autorisées (début–fin)"
+  },
+  "admin.users.password": {
+    "en": "Password",
+    "fr": "Mot de passe"
+  },
+  "admin.users.quota": {
+    "en": "Quota (MB)",
+    "fr": "Quota (Mo)"
+  },
+  "admin.users.saved": {
+    "en": "Saved.",
+    "fr": "Enregistré."
+  },
+  "admin.users.set": {
+    "en": "Set",
+    "fr": "Appliquer"
+  },
+  "admin.users.status": {
+    "en": "Status",
+    "fr": "État"
+  },
+  "admin.users.username": {
+    "en": "Username",
+    "fr": "Nom d'utilisateur"
+  },
+  "admin.users.wifi": {
+    "en": "Wi-Fi (connect)",
+    "fr": "Wi-Fi (connexion)"
+  },
+  "admin.users.wifi-add": {
+    "en": "Wi-Fi (add networks)",
+    "fr": "Wi-Fi (ajout réseaux)"
+  },
+  "admin.wrong-password": {
+    "en": "Wrong password.",
+    "fr": "Mot de passe incorrect."
+  },
+  "app.account": {
+    "en": "Account",
+    "fr": "Compte"
+  },
+  "app.services-label": {
+    "en": "Services:",
+    "fr": "Services :"
+  },
+  "files.album": {
+    "en": "Album",
+    "fr": "Album"
+  },
+  "files.artist": {
+    "en": "Artist",
+    "fr": "Artiste"
+  },
+  "files.lan.add": {
+    "en": "Add SMB share",
+    "fr": "Ajouter un partage SMB"
+  },
+  "files.lan.cancel": {
+    "en": "Cancel",
+    "fr": "Annuler"
+  },
+  "files.lan.label": {
+    "en": "Label",
+    "fr": "Libellé"
+  },
+  "files.lan.password": {
+    "en": "Password",
+    "fr": "Mot de passe"
+  },
+  "files.lan.remove": {
+    "en": "Remove",
+    "fr": "Supprimer"
+  },
+  "files.lan.server": {
+    "en": "Server",
+    "fr": "Serveur"
+  },
+  "files.lan.share": {
+    "en": "Share",
+    "fr": "Partage"
+  },
+  "files.lan.submit": {
+    "en": "Add",
+    "fr": "Ajouter"
+  },
+  "files.lan.subpath": {
+    "en": "Subpath (optional)",
+    "fr": "Sous-chemin (optionnel)"
+  },
+  "files.lan.username": {
+    "en": "Username",
+    "fr": "Utilisateur"
+  },
+  "files.mount": {
+    "en": "Mount",
+    "fr": "Monter"
+  },
+  "files.mounted": {
+    "en": "mounted",
+    "fr": "monté"
+  },
+  "files.no-tracks": {
+    "en": "No tracks. Mount a source and click Scan.",
+    "fr": "Aucun fichier. Montez une source et cliquez sur Scanner."
+  },
+  "files.now-playing": {
+    "en": "Now playing",
+    "fr": "En cours de lecture"
+  },
+  "files.scan": {
+    "en": "Scan all",
+    "fr": "Tout scanner"
+  },
+  "files.sort.album": {
+    "en": "Album",
+    "fr": "Album"
+  },
+  "files.sort.artist": {
+    "en": "Artist",
+    "fr": "Artiste"
+  },
+  "files.sort.genre": {
+    "en": "Genre",
+    "fr": "Genre"
+  },
+  "files.sort.title": {
+    "en": "Title",
+    "fr": "Titre"
+  },
+  "files.sort.year": {
+    "en": "Year",
+    "fr": "Année"
+  },
+  "files.source.internal": {
+    "en": "Internal",
+    "fr": "Interne"
+  },
+  "files.source.removable": {
+    "en": "Removable",
+    "fr": "Amovible"
+  },
+  "files.source.smb": {
+    "en": "LAN",
+    "fr": "Réseau"
+  },
+  "files.sources": {
+    "en": "Sources",
+    "fr": "Sources"
+  },
+  "files.track": {
+    "en": "Track",
+    "fr": "Piste"
+  },
+  "files.unmount": {
+    "en": "Unmount",
+    "fr": "Démonter"
+  },
+  "files.unmounted": {
+    "en": "unmounted",
+    "fr": "démonté"
+  },
+  "files.year": {
+    "en": "Year",
+    "fr": "Année"
+  },
+  "health.error": {
+    "en": "Backend unreachable: {error}",
+    "fr": "Serveur inaccessible : {error}"
+  },
+  "health.ok": {
+    "en": "Backend is running.",
+    "fr": "Le serveur est opérationnel."
+  },
+  "lang.en": {
+    "en": "English",
+    "fr": "Anglais"
+  },
+  "lang.fr": {
+    "en": "French",
+    "fr": "Français"
+  },
+  "mpd.cancel": {
+    "en": "Cancel",
+    "fr": "Annuler"
+  },
+  "mpd.connect": {
+    "en": "Connect",
+    "fr": "Connecter"
+  },
+  "mpd.connected": {
+    "en": "connected",
+    "fr": "connecté"
+  },
+  "mpd.disconnect": {
+    "en": "Disconnect",
+    "fr": "Déconnecter"
+  },
+  "mpd.disconnected": {
+    "en": "disconnected",
+    "fr": "déconnecté"
+  },
+  "mpd.edit": {
+    "en": "Edit settings",
+    "fr": "Modifier les réglages"
+  },
+  "mpd.filter-placeholder": {
+    "en": "Filter…",
+    "fr": "Filtrer…"
+  },
+  "mpd.host": {
+    "en": "Host",
+    "fr": "Hôte"
+  },
+  "mpd.no-match": {
+    "en": "No tracks matching filter.",
+    "fr": "Aucun titre ne correspond au filtre."
+  },
+  "mpd.no-tracks": {
+    "en": "No tracks in MPD library.",
+    "fr": "Aucun titre dans la bibliothèque MPD."
+  },
+  "mpd.password": {
+    "en": "Password (optional)",
+    "fr": "Mot de passe (optionnel)"
+  },
+  "mpd.port": {
+    "en": "Port",
+    "fr": "Port"
+  },
+  "mpd.reconnect": {
+    "en": "Reconnect",
+    "fr": "Reconnecter"
+  },
+  "mpd.refresh": {
+    "en": "Refresh library",
+    "fr": "Actualiser la bibliothèque"
+  },
+  "mpd.stream-url": {
+    "en": "Stream URL (optional)",
+    "fr": "URL du flux (optionnel)"
+  },
+  "mpd.stream-url-hint": {
+    "en": "Leave empty to play audio on the MPD server instead of this device.",
+    "fr": "Laisser vide pour lire l'audio sur le serveur MPD plutôt que sur cet appareil."
+  },
+  "player.next": {
+    "en": "Next",
+    "fr": "Suiv."
+  },
+  "player.normalize": {
+    "en": "Normalize",
+    "fr": "Normaliser"
+  },
+  "player.normalize-blocked": {
+    "en": "Unavailable for this stream",
+    "fr": "Indisponible pour ce flux"
+  },
+  "player.normalizing": {
+    "en": "Normalizing ✓",
+    "fr": "Normalisation ✓"
+  },
+  "player.pause": {
+    "en": "Pause",
+    "fr": "Pause"
+  },
+  "player.play": {
+    "en": "Play",
+    "fr": "Lecture"
+  },
+  "player.prev": {
+    "en": "Prev",
+    "fr": "Préc."
+  },
+  "player.stop": {
+    "en": "Stop",
+    "fr": "Arrêt"
+  },
+  "player.volume": {
+    "en": "Volume",
+    "fr": "Volume"
+  },
+  "playlists.add-all": {
+    "en": "Add all to queue",
+    "fr": "Tout ajouter à la file"
+  },
+  "playlists.add-to": {
+    "en": "Add to playlist",
+    "fr": "Ajouter à une liste"
+  },
+  "playlists.added": {
+    "en": "Added to",
+    "fr": "Ajouté à"
+  },
+  "playlists.browse": {
+    "en": "Playlists",
+    "fr": "Listes de lecture"
+  },
+  "playlists.delete": {
+    "en": "Delete playlist",
+    "fr": "Supprimer la liste"
+  },
+  "playlists.empty": {
+    "en": "No playlists yet.",
+    "fr": "Aucune liste de lecture."
+  },
+  "playlists.err-load": {
+    "en": "Could not load playlists.",
+    "fr": "Impossible de charger les listes."
+  },
+  "playlists.export": {
+    "en": "Export",
+    "fr": "Exporter"
+  },
+  "playlists.import": {
+    "en": "Import",
+    "fr": "Importer"
+  },
+  "playlists.new": {
+    "en": "New playlist",
+    "fr": "Nouvelle liste"
+  },
+  "playlists.no-selection": {
+    "en": "Select or drag tracks first.",
+    "fr": "Sélectionnez ou faites glisser des pistes d'abord."
+  },
+  "playlists.no-tracks": {
+    "en": "This playlist is empty.",
+    "fr": "Cette liste est vide."
+  },
+  "playlists.play-all": {
+    "en": "Play all",
+    "fr": "Tout lire"
+  },
+  "playlists.rename": {
+    "en": "Rename",
+    "fr": "Renommer"
+  },
+  "podcasts.add": {
+    "en": "Add podcast",
+    "fr": "Ajouter un podcast"
+  },
+  "podcasts.adding": {
+    "en": "Adding…",
+    "fr": "Ajout…"
+  },
+  "podcasts.cancel": {
+    "en": "Cancel",
+    "fr": "Annuler"
+  },
+  "podcasts.feed-url": {
+    "en": "RSS feed URL",
+    "fr": "URL du flux RSS"
+  },
+  "podcasts.loading": {
+    "en": "Loading…",
+    "fr": "Chargement…"
+  },
+  "podcasts.no-episodes": {
+    "en": "No episodes found.",
+    "fr": "Aucun épisode trouvé."
+  },
+  "podcasts.no-feeds": {
+    "en": "No podcasts yet. Click Add podcast to subscribe.",
+    "fr": "Aucun podcast. Cliquez sur Ajouter un podcast pour vous abonner."
+  },
+  "podcasts.save": {
+    "en": "Save offline",
+    "fr": "Sauvegarder hors-ligne"
+  },
+  "podcasts.save-error": {
+    "en": "Save failed",
+    "fr": "Échec de la sauvegarde"
+  },
+  "podcasts.saved": {
+    "en": "Saved offline",
+    "fr": "Sauvegardé hors-ligne"
+  },
+  "podcasts.saving": {
+    "en": "Saving…",
+    "fr": "Sauvegarde…"
+  },
+  "podcasts.subscribe": {
+    "en": "Subscribe",
+    "fr": "S'abonner"
+  },
+  "podcasts.unsave": {
+    "en": "Remove offline copy",
+    "fr": "Supprimer la copie locale"
+  },
+  "podcasts.unsubscribe": {
+    "en": "Remove",
+    "fr": "Supprimer"
+  },
+  "power.hibernate": {
+    "en": "Hibernate",
+    "fr": "Hibernation"
+  },
+  "power.poweroff": {
+    "en": "Power off",
+    "fr": "Éteindre"
+  },
+  "power.simulated": {
+    "en": "Simulated: would {action} the device",
+    "fr": "Simulé : appareil en {action}"
+  },
+  "power.suspend": {
+    "en": "Suspend",
+    "fr": "Veille"
+  },
+  "quota.label": {
+    "en": "Offline storage",
+    "fr": "Stockage hors-ligne"
+  },
+  "quota.of": {
+    "en": "of",
+    "fr": "sur"
+  },
+  "radio.favorite": {
+    "en": "Add to favorites",
+    "fr": "Ajouter aux favoris"
+  },
+  "radio.favorites": {
+    "en": "Favorites",
+    "fr": "Favoris"
+  },
+  "radio.filter-placeholder": {
+    "en": "Filter…",
+    "fr": "Filtrer…"
+  },
+  "radio.live": {
+    "en": "LIVE",
+    "fr": "LIVE"
+  },
+  "radio.loading": {
+    "en": "Loading…",
+    "fr": "Chargement…"
+  },
+  "radio.no-favorites": {
+    "en": "No favorites yet. Click ★ on a station to save it.",
+    "fr": "Aucun favori. Cliquez sur ★ pour en ajouter."
+  },
+  "radio.no-results": {
+    "en": "No stations found.",
+    "fr": "Aucune station trouvée."
+  },
+  "radio.no-somafm": {
+    "en": "Could not load SomaFM channels.",
+    "fr": "Impossible de charger les chaînes SomaFM."
+  },
+  "radio.popular": {
+    "en": "Top stations",
+    "fr": "Stations populaires"
+  },
+  "radio.search": {
+    "en": "Search",
+    "fr": "Rechercher"
+  },
+  "radio.search-placeholder": {
+    "en": "Station name…",
+    "fr": "Nom de la station…"
+  },
+  "radio.select-station": {
+    "en": "Select a station to play.",
+    "fr": "Sélectionnez une station."
+  },
+  "radio.unfavorite": {
+    "en": "Remove from favorites",
+    "fr": "Retirer des favoris"
+  },
+  "screen.account-disabled": {
+    "en": "Your account has been disabled by the administrator.",
+    "fr": "Votre compte a été désactivé par l'administrateur."
+  },
+  "screen.device-locked": {
+    "en": "Device locked by administrator.",
+    "fr": "Appareil verrouillé par l'administrateur."
+  },
+  "screen.locking": {
+    "en": "Locking & turning off screen",
+    "fr": "Verrouillage & extinction de l'écran"
+  },
+  "screen.login-error": {
+    "en": "Login failed. Please try again.",
+    "fr": "Connexion échouée. Veuillez réessayer."
+  },
+  "screen.pick-user": {
+    "en": "Who are you?",
+    "fr": "Qui êtes-vous ?"
+  },
+  "service.demo": {
+    "en": "Demo",
+    "fr": "Démo"
+  },
+  "service.files": {
+    "en": "Files",
+    "fr": "Fichiers"
+  },
+  "service.mpd": {
+    "en": "MPD",
+    "fr": "MPD"
+  },
+  "service.playlists": {
+    "en": "Playlists",
+    "fr": "Listes de lecture"
+  },
+  "service.podcasts": {
+    "en": "Podcasts",
+    "fr": "Podcasts"
+  },
+  "service.radio": {
+    "en": "Radio",
+    "fr": "Radio"
+  },
+  "service.spotify": {
+    "en": "Spotify",
+    "fr": "Spotify"
+  },
+  "service.subsonic": {
+    "en": "Subsonic",
+    "fr": "Subsonic"
+  },
+  "session.lock": {
+    "en": "Lock",
+    "fr": "Verrouiller"
+  },
+  "session.logged-in-as": {
+    "en": "▸ {user}",
+    "fr": "▸ {user}"
+  },
+  "shell.back": {
+    "en": "Back",
+    "fr": "Retour"
+  },
+  "shell.cancel": {
+    "en": "Cancel",
+    "fr": "Annuler"
+  },
+  "shell.connectivity.bt": {
+    "en": "Bluetooth",
+    "fr": "Bluetooth"
+  },
+  "shell.connectivity.stub": {
+    "en": "Connectivity configuration will be available in a future update.",
+    "fr": "La configuration de la connectivité sera disponible dans une prochaine mise à jour."
+  },
+  "shell.connectivity.wifi": {
+    "en": "Wi-Fi",
+    "fr": "Wi-Fi"
+  },
+  "shell.logout": {
+    "en": "Log out",
+    "fr": "Se déconnecter"
+  },
+  "shell.no-services": {
+    "en": "No services enabled.",
+    "fr": "Aucun service activé."
+  },
+  "shell.power-confirm": {
+    "en": "Power off the device?",
+    "fr": "Éteindre l'appareil ?"
+  },
+  "shell.settings": {
+    "en": "Settings",
+    "fr": "Paramètres"
+  },
+  "spotify.active-device": {
+    "en": "Active device",
+    "fr": "Appareil actif"
+  },
+  "spotify.authed": {
+    "en": "connected",
+    "fr": "connecté"
+  },
+  "spotify.cancel": {
+    "en": "Close",
+    "fr": "Fermer"
+  },
+  "spotify.connect": {
+    "en": "Connect with Spotify",
+    "fr": "Connecter avec Spotify"
+  },
+  "spotify.disconnect": {
+    "en": "Disconnect",
+    "fr": "Déconnecter"
+  },
+  "spotify.filter-placeholder": {
+    "en": "Filter…",
+    "fr": "Filtrer…"
+  },
+  "spotify.librespot-stopped": {
+    "en": "Local device not running",
+    "fr": "Appareil local non actif"
+  },
+  "spotify.list-devices": {
+    "en": "Devices",
+    "fr": "Appareils"
+  },
+  "spotify.no-match": {
+    "en": "No tracks matching filter.",
+    "fr": "Aucun titre ne correspond au filtre."
+  },
+  "spotify.no-tracks": {
+    "en": "No saved tracks. Connect and click Refresh.",
+    "fr": "Aucun titre sauvegardé. Connectez-vous et cliquez sur Actualiser."
+  },
+  "spotify.not-authed": {
+    "en": "not connected",
+    "fr": "non connecté"
+  },
+  "spotify.playing-on": {
+    "en": "Playing on:",
+    "fr": "Lecture sur :"
+  },
+  "spotify.refresh-library": {
+    "en": "Refresh library",
+    "fr": "Actualiser la bibliothèque"
+  },
+  "spotify.restart-librespot": {
+    "en": "Restart local device",
+    "fr": "Redémarrer l'appareil local"
+  },
+  "spotify.use": {
+    "en": "Use",
+    "fr": "Utiliser"
+  },
+  "spotify.use-this-device": {
+    "en": "Use this device",
+    "fr": "Utiliser cet appareil"
+  },
+  "subsonic.cancel": {
+    "en": "Cancel",
+    "fr": "Annuler"
+  },
+  "subsonic.connect": {
+    "en": "Connect",
+    "fr": "Connecter"
+  },
+  "subsonic.connected": {
+    "en": "connected",
+    "fr": "connecté"
+  },
+  "subsonic.disconnect": {
+    "en": "Disconnect",
+    "fr": "Déconnecter"
+  },
+  "subsonic.disconnected": {
+    "en": "disconnected",
+    "fr": "déconnecté"
+  },
+  "subsonic.edit": {
+    "en": "Edit settings",
+    "fr": "Modifier les réglages"
+  },
+  "subsonic.filter-placeholder": {
+    "en": "Filter…",
+    "fr": "Filtrer…"
+  },
+  "subsonic.no-match": {
+    "en": "No tracks matching filter.",
+    "fr": "Aucun titre ne correspond au filtre."
+  },
+  "subsonic.no-tracks": {
+    "en": "No tracks in library.",
+    "fr": "Aucun titre dans la bibliothèque."
+  },
+  "subsonic.password": {
+    "en": "Password",
+    "fr": "Mot de passe"
+  },
+  "subsonic.reconnect": {
+    "en": "Reconnect",
+    "fr": "Reconnecter"
+  },
+  "subsonic.refresh": {
+    "en": "Refresh library",
+    "fr": "Actualiser la bibliothèque"
+  },
+  "subsonic.server": {
+    "en": "Server URL",
+    "fr": "URL du serveur"
+  },
+  "subsonic.user": {
+    "en": "Username",
+    "fr": "Identifiant"
+  }
 }

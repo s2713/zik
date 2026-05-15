@@ -20,6 +20,7 @@ from .admin_lock import DeviceLock, make_admin_lock_router, make_lock_store
 from .admin_network import make_admin_network_router, make_network_store
 from .admin_services import ServiceRecord, make_admin_services_router, make_service_store
 from .admin_terminal import make_admin_terminal_router
+from .admin_update import make_admin_update_router
 from .helper_client import HelperClient
 from .middleware import CsrfDoubleSubmitMiddleware, OriginCheckMiddleware
 from .player import PlayerManager, state_as_dict
@@ -295,6 +296,7 @@ def make_app(
             *make_admin_lock_router(_sessions, _demo_device_lock, _demo_audit),
             *make_admin_audit_router(_sessions, _demo_audit),
             *make_admin_terminal_router(_sessions),
+            *make_admin_update_router(_sessions),
             *make_admin_backup_router(
                 _sessions, _demo_users, _demo_services,
                 _demo_network_policy, _demo_networks,
