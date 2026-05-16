@@ -71,9 +71,10 @@ interface PlayerStateData {
   position: number;
 }
 
-// ---- localStorage helpers (per-user) ----
+// ---- localStorage / sessionStorage helpers (per-user) ----
 function _visibleKey(): string { return `zik-demo.${currentUser()}.visible-services`; }
 function _shareKey():   string { return `zik-demo.${currentUser()}.share-with-admin`; }
+function _viewKey(user: string): string { return `zik-view.${user}`; }
 
 function _loadVisible(): Set<string> {
   try {
@@ -687,6 +688,15 @@ export class UserShell extends PlayerBase {
     this._visible = _loadVisible();
     this._shares  = _loadShares();
     this._pwStatus = null;
+    // Clear stale backend poll so the footer doesn't show the previous user's track.
+    // _playlistState is already correct at this point — queue.restore()/clear() fired before
+    // USER_CHANGED_EVENT — so we must NOT clear it.
+    this._playerState = null;
+    // Restore the view the incoming user was last on, defaulting to the home grid.
+    const saved = sessionStorage.getItem(_viewKey(this._user));
+    this._activeId = saved || null;
+    this._settingsOpen = false;
+    this._closeBt();
     window.dispatchEvent(new CustomEvent(SERVICES_CHANGED_EVENT));
   };
 
@@ -746,10 +756,14 @@ export class UserShell extends PlayerBase {
     this._activeId     = id;
     this._settingsOpen = false;
     this._connWifiOpen = false;
-    this._connBtOpen   = false;
+    this._closeBt();
+    sessionStorage.setItem(_viewKey(currentUser()), id);
   }
 
-  private _goHome(): void { this._activeId = null; }
+  private _goHome(): void {
+    this._activeId = null;
+    sessionStorage.setItem(_viewKey(currentUser()), "");
+  }
 
   // ---- bluetooth ----
 
@@ -1176,8 +1190,9 @@ export class UserShell extends PlayerBase {
     // _playlistState is emitted by QueueController on every status change.
     const pl      = this._playlistState;
     const playing = pl ? pl.status === "playing" : ps?.status === "playing";
-    const title   = ps?.track?.title  ?? "";
-    const artist  = ps?.track?.artist ?? "";
+    // Prefer queue metadata (always current); fall back to backend poll for non-queue services.
+    const title   = pl?.title  ?? ps?.track?.title  ?? "";
+    const artist  = pl?.artist ?? ps?.track?.artist ?? "";
     const vol     = this._muted ? 0 : this._volume;
     const muteIcon = this._muted || this._volume === 0 ? "🔇"
       : this._volume < 40 ? "🔈" : this._volume < 75 ? "🔉" : "🔊";

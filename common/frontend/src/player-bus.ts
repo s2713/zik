@@ -43,4 +43,8 @@ export interface PlaylistStateEvent {
   totalDuration: number;  // sum of all track durations, seconds
   position: number;       // current playback position, seconds
   duration: number;       // current track duration, seconds
+  // Current track metadata — present when a track is loaded, absent when queue is empty.
+  title?:  string;
+  artist?: string;
+  artUrl?: string;
 }

@@ -427,6 +427,10 @@ class QueueController extends EventTarget {
           totalDuration: this._items.reduce((s, it) => s + it.duration, 0),
           position:      this._audio.currentTime,
           duration:      item?.duration ?? 0,
+          // Include track metadata so the footer doesn't have to fall back to the backend poll.
+          title:         item?.title,
+          artist:        item?.artist,
+          ...(item?.artUrl !== undefined && { artUrl: item.artUrl }),
         },
       }),
     );
