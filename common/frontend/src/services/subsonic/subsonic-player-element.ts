@@ -15,6 +15,7 @@ type SortCol = "title" | "artist" | "album" | "year" | "genre";
 
 interface SubsonicTrack {
   id:        string;
+  albumId?:  string;
   title?:    string;
   artist?:   string;
   album?:    string;
@@ -142,6 +143,7 @@ export class SubsonicPlayerElement extends PlayerBase {
     .badge { font-size: 0.78em; padding: 0.15em 0.5em; border-radius: 3px; }
     .badge.on  { background: #14532d; color: #86efac; }
     .badge.off { background: #7f1d1d; color: #fca5a5; }
+    .lib-stats { font-size: 0.78em; color: #64748b; white-space: nowrap; }
 
     /* ---- two-panel layout ---- */
     .panels {
@@ -224,9 +226,10 @@ export class SubsonicPlayerElement extends PlayerBase {
   @state() private _form: SourceForm = { ...EMPTY_FORM };
 
   // ---- auth + library state ----
-  @state() private _connected  = false;
+  @state() private _connected   = false;
   @state() private _auth: AuthInfo = { server: "", user: "", token: "", salt: "" };
   @state() private _library: SubsonicTrack[] = [];
+  @state() private _refreshing  = false;  // true while a refresh request is in flight
 
   // ---- library filter/sort state ----
   @state() private _sortCol: SortCol = "artist";
@@ -368,7 +371,9 @@ export class SubsonicPlayerElement extends PlayerBase {
         };
         await this._fetchSources();
         this._startPolling();
-        await this._fetchLibrary();
+        // Load cache instantly, then refresh in background for new additions.
+        await this._loadCachedLibrary();
+        void this._quickRefresh();
       }
     } catch { /* backend unavailable */ }
   }
@@ -424,6 +429,11 @@ export class SubsonicPlayerElement extends PlayerBase {
         };
         if (data.active_id) this._selectedId = data.active_id;
         this._startPolling();
+        // If the backend restarted and the library is blank, load from cache.
+        if (this._library.length === 0) {
+          await this._loadCachedLibrary();
+          if (this._library.length === 0) void this._quickRefresh();
+        }
       } else {
         this._stopPolling();
       }
@@ -432,11 +442,38 @@ export class SubsonicPlayerElement extends PlayerBase {
 
   // ---- library ----
 
-  private async _fetchLibrary(): Promise<void> {
+  private async _loadCachedLibrary(): Promise<void> {
+    // Returns the on-disk cache instantly; empty array if none.
     try {
       const r = await fetch("/api/subsonic/library");
       if (r.ok) this._library = await r.json() as SubsonicTrack[];
-    } catch (err) { console.error("subsonic: library fetch failed", err); }
+    } catch (err) { console.error("subsonic: cache load failed", err); }
+  }
+
+  private async _quickRefresh(): Promise<void> {
+    // Fetches albums added since last cache; fast; does not detect deletions.
+    if (this._refreshing) return;
+    this._refreshing = true;
+    try {
+      const r = await fetch("/api/subsonic/library/refresh", {
+        method: "POST", headers: { ...getCsrfHeaders() },
+      });
+      if (r.ok) this._library = await r.json() as SubsonicTrack[];
+    } catch (err) { console.error("subsonic: quick refresh failed", err); }
+    finally { this._refreshing = false; }
+  }
+
+  private async _fullRefresh(): Promise<void> {
+    // Re-fetches every track; slow but catches deletions and metadata changes.
+    if (this._refreshing) return;
+    this._refreshing = true;
+    try {
+      const r = await fetch("/api/subsonic/library/full-refresh", {
+        method: "POST", headers: { ...getCsrfHeaders() },
+      });
+      if (r.ok) this._library = await r.json() as SubsonicTrack[];
+    } catch (err) { console.error("subsonic: full refresh failed", err); }
+    finally { this._refreshing = false; }
   }
 
   /** Apply per-column filters, sort by selected column, cap at 500. */
@@ -655,10 +692,27 @@ export class SubsonicPlayerElement extends PlayerBase {
         ` : nothing}
         ${this._connected ? html`
           <button class="btn" @click=${() => void this._disconnect()}>Disconnect</button>
-          <button class="btn" @click=${() => void this._fetchLibrary()}>↺ Refresh library</button>
+          <button class="btn" ?disabled=${this._refreshing}
+                  @click=${() => void this._quickRefresh()}>
+            ${this._refreshing ? "…" : "↺ Refresh"}
+          </button>
+          <button class="btn" ?disabled=${this._refreshing}
+                  title="Re-fetch every track (slow; detects deletions and metadata changes)"
+                  @click=${() => void this._fullRefresh()}>⟳ Full</button>
+          ${this._library.length > 0 ? html`
+            <span class="lib-stats">${this._libraryStats()}</span>
+          ` : nothing}
         ` : nothing}
       </div>
     `;
+  }
+
+  private _libraryStats(): string {
+    const tracks  = this._library.length;
+    const albums  = new Set(this._library.map(t => t.albumId).filter(Boolean)).size;
+    const artists = new Set(this._library.map(t => t.artist).filter(Boolean)).size;
+    const fmt = (n: number) => n.toLocaleString();
+    return `${fmt(tracks)} tracks · ${fmt(albums)} albums · ${fmt(artists)} artists`;
   }
 
   private _renderColHeader(col: SortCol, label: string): TemplateResult {
@@ -676,7 +730,9 @@ export class SubsonicPlayerElement extends PlayerBase {
       return html`<div class="empty">Select an account and connect to browse the library.</div>`;
     }
     if (this._library.length === 0) {
-      return html`<div class="empty">Library is empty — click ↺ Refresh library after connecting.</div>`;
+      return html`<div class="empty">${this._refreshing
+        ? "Loading library…"
+        : "Library is empty — click ↺ Refresh after connecting."}</div>`;
     }
     const { tracks, matched } = this._buildDisplay();
     const allIds  = tracks.map(t => t.id);   // ordered for shift-click range

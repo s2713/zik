@@ -103,7 +103,8 @@ def make_subsonic_router(proxy: SubsonicProxy, db: LibraryDB) -> list:
         if source is None:
             return JSONResponse({"error": "not found"}, status_code=404)
         try:
-            await proxy.connect(source["server"], source["user"], source["password"])
+            await proxy.connect(source["server"], source["user"], source["password"],
+                                source_id=sid)
         except (SubsonicError, httpx.HTTPError, OSError) as exc:
             return JSONResponse({"error": str(exc)}, status_code=503)
         await db.set_setting(_ACTIVE_KEY, sid)
@@ -182,27 +183,45 @@ def make_subsonic_router(proxy: SubsonicProxy, db: LibraryDB) -> list:
         })
 
     async def library(_request: Request) -> JSONResponse:
-        """Return the full song library as a JSON array."""
+        """GET /api/subsonic/library — return cached library instantly (may be empty)."""
+        return JSONResponse(proxy.cached_library())
+
+    async def library_quick_refresh(_request: Request) -> JSONResponse:
+        """POST /api/subsonic/library/refresh — add albums new since last cache; fast."""
+        if not proxy.connected:
+            return JSONResponse({"error": "not connected"}, status_code=503)
+        try:
+            tracks = await proxy.quick_library()
+        except (SubsonicError, httpx.HTTPError, OSError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=503)
+        logger.info("subsonic: quick refresh returned %d tracks", len(tracks))
+        return JSONResponse(tracks)
+
+    async def library_full_refresh(_request: Request) -> JSONResponse:
+        """POST /api/subsonic/library/full-refresh — re-fetch all tracks; slow but complete."""
         if not proxy.connected:
             return JSONResponse({"error": "not connected"}, status_code=503)
         try:
             tracks = await proxy.library()
         except (SubsonicError, httpx.HTTPError, OSError) as exc:
             return JSONResponse({"error": str(exc)}, status_code=503)
-        logger.info("subsonic: library route returned %d tracks", len(tracks))
+        logger.info("subsonic: full refresh returned %d tracks", len(tracks))
         return JSONResponse(tracks)
 
     return [
         # source management
-        Route("/api/subsonic/sources",               sources_list,     methods=["GET"]),
-        Route("/api/subsonic/sources",               sources_create,   methods=["POST"]),
-        Route("/api/subsonic/sources/{id}",          sources_update,   methods=["PUT"]),
-        Route("/api/subsonic/sources/{id}",          sources_delete,   methods=["DELETE"]),
-        Route("/api/subsonic/sources/{id}/activate", sources_activate, methods=["POST"]),
-        Route("/api/subsonic/sources/{id}/ping",     sources_ping,     methods=["GET"]),
-        # playback + status (unchanged)
-        Route("/api/subsonic/connect",    connect,    methods=["POST"]),
-        Route("/api/subsonic/disconnect", disconnect, methods=["POST"]),
-        Route("/api/subsonic/status",     status),
-        Route("/api/subsonic/library",    library),
+        Route("/api/subsonic/sources",                    sources_list,           methods=["GET"]),
+        Route("/api/subsonic/sources",                    sources_create,         methods=["POST"]),
+        Route("/api/subsonic/sources/{id}",               sources_update,         methods=["PUT"]),
+        Route("/api/subsonic/sources/{id}",               sources_delete,      methods=["DELETE"]),
+        Route("/api/subsonic/sources/{id}/activate",      sources_activate,       methods=["POST"]),
+        Route("/api/subsonic/sources/{id}/ping",          sources_ping,           methods=["GET"]),
+        # playback + status
+        Route("/api/subsonic/connect",                    connect,                methods=["POST"]),
+        Route("/api/subsonic/disconnect",                 disconnect,             methods=["POST"]),
+        Route("/api/subsonic/status",                     status),
+        # library
+        Route("/api/subsonic/library",                    library,                methods=["GET"]),
+        Route("/api/subsonic/library/refresh",            library_quick_refresh,  methods=["POST"]),
+        Route("/api/subsonic/library/full-refresh",       library_full_refresh,   methods=["POST"]),
     ]

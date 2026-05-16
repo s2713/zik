@@ -124,6 +124,15 @@ they are not collected in the first place.
 
 ## Security
 
+### Subsonic library size limit
+
+The library fetcher pages through `search3` results (500 tracks per request) and stops
+at a safety cap of **100 000 tracks** (`_MAX_SONGS` in `services/subsonic/client.py`).
+Libraries beyond that size will be silently truncated. Tracks added after the initial
+fetch appear via the quick-refresh path (checks the 500 most recently added albums via
+`getAlbumList2?type=newest`). If your library exceeds 100k tracks, raise the constant
+or implement a smarter pagination strategy.
+
 ### Subsonic stream URL credentials
 
 Subsonic authentication uses a token+salt pair (token = MD5(password+salt)) that is
