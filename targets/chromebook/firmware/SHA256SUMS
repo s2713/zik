@@ -1,0 +1,27 @@
+# MrChromebox Full ROM SHA256 hashes — pinned at release time.
+#
+# Format (standard sha256sum): <hash>  <filename>
+#
+# HOW TO UPDATE THIS FILE
+# -----------------------
+# 1. Identify the current ROM for your board at:
+#      https://mrchromebox.tech/files/firmware/full_rom/
+# 2. Download the ROM and MrChromebox's own SHA256SUMS for cross-check:
+#      curl -LO https://mrchromebox.tech/files/firmware/full_rom/SHA256SUMS
+#      grep kasumi360 SHA256SUMS
+# 3. Download the ROM, verify against their SHA256SUMS, then pin it here:
+#      curl -LO https://mrchromebox.tech/files/firmware/full_rom/coreboot_tiano-kasumi360-mrchromebox_YYYYMMDD.rom
+#      sha256sum coreboot_tiano-kasumi360-mrchromebox_YYYYMMDD.rom
+# 4. Replace the placeholder line below with the real hash + filename.
+# 5. Update FIRMWARE_URL in flash-firmware.sh to point to the same file.
+# 6. Commit both files together; tag the release.
+#
+# SUPPORTED BOARDS
+# ----------------
+# kasumi360  HP Chromebook x360 12b-ca0010nf  (Intel Gemini Lake / Octopus)
+#
+# If adding support for another board, append a line for its ROM here
+# and add its board name to SUPPORTED_BOARDS in flash-firmware.sh.
+#
+# PLACEHOLDER — replace before release:
+@FILL_BEFORE_RELEASE@  coreboot_tiano-kasumi360-mrchromebox_@DATE@.rom

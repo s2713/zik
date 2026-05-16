@@ -143,21 +143,39 @@ Steps:
 5. Reassemble the bottom cover (you can leave it loose for now).
 6. Power on and re-enter Developer Mode root shell (see §1.3).
 
-### 2.2 Run the MrChromebox firmware utility
+### 2.2 Flash the MrChromebox coreboot/UEFI firmware
+
+The Zik repository ships `targets/chromebook/flash-firmware.sh`, an auditable
+script that downloads the firmware for your board, verifies its SHA256 against
+a pinned value checked into the repo, and flashes it with `flashrom`.  This is
+safer than piping an unknown script from the internet.
+
+Copy it to the Chromebook (or type it out, or serve it from your build host):
 
 ```bash
-cd /tmp
-curl -LO mrchromebox.tech/firmware-util.sh
-sudo bash firmware-util.sh
+# On the build host:
+scp targets/chromebook/flash-firmware.sh chronos@<chromebook-ip>:/tmp/
+
+# On the Chromebook (Developer Mode root shell):
+sudo bash /tmp/flash-firmware.sh
 ```
 
-1. Select **"Install/Update UEFI (Full ROM) Firmware"**.
-2. The script will offer to save a firmware backup — **accept**.
-3. Confirm the flash. The utility downloads and writes the coreboot/UEFI ROM.
-4. Reboot when prompted.
+The script will:
+1. Identify and validate your board name.
+2. Save a backup of the existing firmware to `/tmp/firmware-backup-*.bin`.
+3. Download the pinned ROM from MrChromebox's server.
+4. Verify SHA256 against `firmware/SHA256SUMS` (mismatches abort immediately).
+5. Ask for confirmation, then flash.
+
+A `--dry-run` flag downloads and verifies without flashing, useful if you want
+to inspect before committing.
 
 After reboot you will see a standard UEFI boot screen instead of the Google
 firmware screen. The Chromebook can now boot from a standard USB drive.
+
+> **If `scp` is not available:** in Developer Mode you can also serve the script
+> with `python3 -m http.server 8080` on the build host and fetch it on the
+> Chromebook with `curl http://<build-host-ip>:8080/flash-firmware.sh`.
 
 ---
 

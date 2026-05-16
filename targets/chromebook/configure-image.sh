@@ -207,8 +207,31 @@ if [[ -n "${ADMIN_PW}" ]]; then
     # Mark first-boot as done — no wizard needed.
     touch "${MOUNT_ROOT}/var/lib/zik/first-boot-done"
     info "first-boot gate written — wizard will be skipped"
+
+    # ---- GRUB maintenance-entry password (C.21) --------------------------------
+    # Replace @GRUB_PW_HASH@ with a real PBKDF2 hash so the maintenance GRUB
+    # entry is protected by the admin password.  We patch both the grub.d script
+    # (for future update-grub runs on the device) and the pre-generated grub.cfg.
+    if command -v grub-mkpasswd-pbkdf2 >/dev/null 2>&1; then
+        info "generating GRUB PBKDF2 password hash"
+        GRUB_HASH="$(printf '%s\n%s\n' "${ADMIN_PW}" "${ADMIN_PW}" | \
+            grub-mkpasswd-pbkdf2 2>/dev/null | \
+            awk '/hash of/ {print $NF}')"
+        if [[ -z "${GRUB_HASH}" ]]; then
+            warn "grub-mkpasswd-pbkdf2 produced no output; maintenance entry remains locked"
+        else
+            GRUB_D="${MOUNT_ROOT}/etc/grub.d/01_zik_password"
+            GRUB_CFG="${MOUNT_ROOT}/boot/grub/grub.cfg"
+            [[ -f "${GRUB_D}" ]]   && sed -i "s|@GRUB_PW_HASH@|${GRUB_HASH}|g" "${GRUB_D}"
+            [[ -f "${GRUB_CFG}" ]] && sed -i "s|@GRUB_PW_HASH@|${GRUB_HASH}|g" "${GRUB_CFG}"
+            info "GRUB maintenance entry protected with admin password"
+        fi
+    else
+        warn "grub-mkpasswd-pbkdf2 not found on build host; maintenance GRUB entry will be inaccessible"
+    fi
 else
     info "no admin_password in config — first-boot wizard will run"
+    info "GRUB maintenance entry will use placeholder hash (inaccessible until password is set)"
     rm -f "${MOUNT_ROOT}/var/lib/zik/first-boot-done"
 fi
 
