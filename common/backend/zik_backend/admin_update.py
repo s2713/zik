@@ -8,6 +8,9 @@ Download flow:
 The version manifest is a JSON file at a configurable URL (default: GitHub raw).
 Artifact signatures are verified with gpg against the maintainer keyring at
 GPG_KEYRING_PATH; verification is skipped in demo mode when the keyring is absent.
+
+Demo mode (privhelp binary absent): check returns a fake manifest so the full
+UI flow is exercisable offline; start simulates a 2 s install and returns success.
 """
 
 import asyncio
@@ -30,6 +33,15 @@ VERSION_FILE     = Path("/opt/zik/current/version")
 PRIVHELP_BIN     = Path("/usr/libexec/zik/zik-privhelp")
 GPG_KEYRING_PATH = Path("/usr/share/zik/trustedkeys.gpg")
 
+# Fake versions shown in demo mode so the check→install flow can be exercised.
+_DEMO_CURRENT = "0.9.0-demo"
+_DEMO_LATEST  = "1.0.0"
+
+
+def _is_demo() -> bool:
+    """True when running without the privhelp setuid binary (development / demo target)."""
+    return not PRIVHELP_BIN.exists()
+
 
 def _manifest_url() -> str:
     """Return the configured manifest URL, or the default."""
@@ -39,11 +51,28 @@ def _manifest_url() -> str:
 
 
 def _current_version() -> str:
-    """Return the running version string, or 'unknown'."""
+    """Return the running version string; in demo mode return a placeholder."""
     try:
         return VERSION_FILE.read_text().strip()
     except OSError:
-        return "unknown"
+        return _DEMO_CURRENT if _is_demo() else "unknown"
+
+
+def _version_tuple(v: str) -> tuple[int, ...]:
+    """Parse "1.2.3-suffix" → (1, 2, 3) for monotonic ordering (T-SW-15)."""
+    parts = []
+    for segment in v.split("."):
+        numeric = segment.split("-")[0].split("+")[0]
+        try:
+            parts.append(int(numeric))
+        except ValueError:
+            parts.append(0)
+    return tuple(parts)
+
+
+def _version_newer(candidate: str, current: str) -> bool:
+    """Return True only if candidate is strictly newer than current."""
+    return _version_tuple(candidate) > _version_tuple(current)
 
 
 def _sha256(data: bytes) -> str:
@@ -78,6 +107,14 @@ def make_admin_update_router(sessions: dict) -> list:
         if _require_admin(request) is None:
             return JSONResponse({"error": "forbidden"}, status_code=403)
         current = _current_version()
+        # Demo fast-path: return a fake manifest so the UI flow is exercisable offline.
+        if _is_demo():
+            return JSONResponse({
+                "current":       current,
+                "latest":        _DEMO_LATEST,
+                "up_to_date":    False,
+                "changelog_url": "",
+            })
         url = _manifest_url()
         try:
             async with httpx.AsyncClient(timeout=10) as client:
@@ -91,7 +128,8 @@ def make_admin_update_router(sessions: dict) -> list:
             )
         latest = manifest.get("latest", "unknown")
         changelog_url = manifest.get("changelog_url", "")
-        up_to_date = current == latest
+        # Use strict monotonic comparison so a downgraded manifest is flagged as up-to-date.
+        up_to_date = not _version_newer(latest, current)
         return JSONResponse({
             "current":       current,
             "latest":        latest,
@@ -103,11 +141,10 @@ def make_admin_update_router(sessions: dict) -> list:
         """POST /api/admin/update/start — download, verify, and install a release."""
         if _require_admin(request) is None:
             return JSONResponse({"error": "forbidden"}, status_code=403)
-        if not PRIVHELP_BIN.exists():
-            return JSONResponse(
-                {"error": "update not supported in demo mode"},
-                status_code=501,
-            )
+        # Demo fast-path: simulate the install delay and return success.
+        if _is_demo():
+            await asyncio.sleep(2)
+            return JSONResponse({"ok": True, "version": _DEMO_LATEST})
 
         # Fetch the manifest.
         url = _manifest_url()
@@ -132,8 +169,12 @@ def make_admin_update_router(sessions: dict) -> list:
                 {"error": "manifest is incomplete or no release is available"},
                 status_code=422,
             )
-        if version == _current_version():
-            return JSONResponse({"error": "already on this version"}, status_code=409)
+        # Monotonic check (T-SW-15): refuse to install a version that is not strictly newer.
+        if not _version_newer(version, _current_version()):
+            return JSONResponse(
+                {"error": "version is not newer than the installed release"},
+                status_code=409,
+            )
 
         with tempfile.TemporaryDirectory(prefix="zik-update-") as tmpdir:
             tmp = Path(tmpdir)
