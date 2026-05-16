@@ -178,8 +178,13 @@ export class UserShell extends PlayerBase {
       z-index: 100;
       box-sizing: border-box;
     }
-    .topbar-left  { display: flex; align-items: center; gap: 0.4rem; flex: 1; min-width: 0; }
-    .topbar-right { display: flex; align-items: center; gap: 0.15rem; flex-shrink: 0; }
+    .topbar-left   { display: flex; align-items: center; gap: 0.4rem; flex: 1; min-width: 0; }
+    .topbar-center {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      font-size: 0.82rem; color: #64748b; pointer-events: none;
+      white-space: nowrap;
+    }
+    .topbar-right  { display: flex; align-items: center; gap: 0.15rem; flex-shrink: 0; }
     .topbar-brand { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
     .topbar-sep   { color: #475569; padding: 0 0.1rem; }
     .topbar-svc   {
@@ -964,14 +969,16 @@ export class UserShell extends PlayerBase {
             <span class="topbar-sep">·</span>
           ` : nothing}
           <span class="topbar-brand">zik</span>
-          <span class="topbar-sep">·</span>
-          <span class="topbar-svc ${inSvc ? "topbar-svc-chip" : ""}"
-                style=${inSvc && this._activeId
-                  ? `background:${SERVICE_ICONS[this._activeId]?.color ?? "#334155"}`
-                  : ""}>
-            ${inSvc ? this._activeSvcLabel() : this._user}
-          </span>
+          ${inSvc ? html`
+            <span class="topbar-sep">·</span>
+            <span class="topbar-svc topbar-svc-chip"
+                  style="background:${SERVICE_ICONS[this._activeId!]?.color ?? "#334155"}">
+              ${this._activeSvcLabel()}
+            </span>
+          ` : nothing}
         </div>
+
+        <div class="topbar-center">${this._user}</div>
 
         <div class="topbar-right">
           <!-- language picker -->

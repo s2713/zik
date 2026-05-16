@@ -5,7 +5,10 @@ import { ensureCsrfToken, getCsrfHeaders } from "./csrf.js";
 import { t } from "./i18n/i18n.js";
 import { PlayerBase } from "./player-base.js";
 import { dispatchPlayerCmd } from "./player-bus.js";
+import { type QueueSnapshot, queue } from "./queue/queue-controller.js";
 import { USER_CHANGED_EVENT, currentUser, listUsers, setCurrentUser } from "./session.js";
+
+const _QUEUE_SNAP_KEY = (user: string) => `zik-queue.${user}`;
 
 /** Possible lock states: hidden, showing locking message, fully locked. */
 type LockState = "idle" | "locking" | "locked";
@@ -269,7 +272,13 @@ export class ScreenLockElement extends PlayerBase {
   private async _selectUser(name: string): Promise<void> {
     const prev = currentUser();
     // Pause outgoing user's audio before handing the session to the new user.
-    if (name !== prev) dispatchPlayerCmd({ type: "PauseAll" });
+    if (name !== prev) {
+      dispatchPlayerCmd({ type: "PauseAll" });
+      // Snapshot outgoing user's queue so they can resume where they left off.
+      const snap = queue.snapshot();
+      if (snap) sessionStorage.setItem(_QUEUE_SNAP_KEY(prev), JSON.stringify(snap));
+      else       sessionStorage.removeItem(_QUEUE_SNAP_KEY(prev));
+    }
     try {
       const attempt = async () => fetch("/api/session/login", {
         method: "POST",
@@ -299,6 +308,12 @@ export class ScreenLockElement extends PlayerBase {
       }
       this._loginError = "";
     } catch { /* network error — let local state update anyway */ }
+    // Restore incoming user's queue (or clear if they have none).
+    if (name !== prev) {
+      const saved = sessionStorage.getItem(_QUEUE_SNAP_KEY(name));
+      if (saved) queue.restore(JSON.parse(saved) as QueueSnapshot);
+      else       queue.clear();
+    }
     setCurrentUser(name);
     if (name !== prev) {
       // Different user — fire USER_CHANGED_EVENT (already done by setCurrentUser)

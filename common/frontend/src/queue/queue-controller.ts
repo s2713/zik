@@ -453,6 +453,46 @@ class QueueController extends EventTarget {
       });
     } catch { /* backend unavailable */ }
   }
+
+  // ---- per-user save / restore --------------------------------------------
+
+  /** Capture queue state so it can be persisted across a user switch. */
+  snapshot(): QueueSnapshot | null {
+    if (this._items.length === 0) return null;
+    const cur = this._items[this._index];
+    // Spotify position is managed by the SDK; only save position for audio-element tracks.
+    const position = (cur && cur.serviceId !== "spotify") ? this._audio.currentTime : 0;
+    return {
+      items:    this._items.map(({ serviceId, trackId, audioUrl, artUrl, title, artist, album, duration }) =>
+                  ({ serviceId, trackId, audioUrl, ...(artUrl !== undefined && { artUrl }), title, artist, album, duration })),
+      index:    this._index,
+      position,
+    };
+  }
+
+  /** Restore a saved snapshot; leaves queue paused at the saved position. */
+  restore(snap: QueueSnapshot): void {
+    this._stopAudio();
+    this._items  = this._tag(snap.items);
+    this._index  = Math.max(-1, Math.min(snap.index, this._items.length - 1));
+    this._status = "paused";
+    // Pre-load the audio src so the user can hit play without re-buffering.
+    const cur = this._items[this._index];
+    if (cur && cur.serviceId !== "spotify" && cur.audioUrl) {
+      this._audio.src         = cur.audioUrl;
+      this._audio.currentTime = snap.position;
+      this._audio.load();
+    }
+    this._emit();
+    this._emitPlaylistState();
+  }
+}
+
+/** Saved queue state for restore after a user switch. */
+export interface QueueSnapshot {
+  items:    QueueItem[];
+  index:    number;
+  position: number;   // seconds into the current track (0 for Spotify)
 }
 
 /** Singleton cross-service play queue. Import and use anywhere in the frontend. */
