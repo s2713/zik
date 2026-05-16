@@ -137,13 +137,8 @@ export class ScreenLockElement extends PlayerBase {
   private _idleTimer:     ReturnType<typeof setTimeout>  | null = null;
   private _lockTimer:     ReturnType<typeof setTimeout>  | null = null;
   private _clockInterval: ReturnType<typeof setInterval> | null = null;
-  // Suppresses _onActivity for one event-loop tick after a programmatic lock
-  // request, so the click that triggered the Lock button doesn't immediately
-  // cancel the lock via the document click listener.
-  private _lockProgrammatic = false;
 
   private readonly _onActivity = (): void => {
-    if (this._lockProgrammatic)        return;
     if (this._lockState === "locked")  return;
     if (this._lockState === "locking") { this._cancelLock(); return; }
     this._resetIdleTimer();
@@ -153,10 +148,14 @@ export class ScreenLockElement extends PlayerBase {
     if (this._lockState !== "locked") this._onActivity();
   };
   private readonly _onLockRequest = (): void => {
-    this._lockProgrammatic = true;
-    void this._startLocking();
-    // Clear after the current event loop so the triggering click doesn't cancel.
-    setTimeout(() => { this._lockProgrammatic = false; }, 0);
+    // Lock immediately — no grace period for a manual lock request.
+    // Going straight to "locked" means _onActivity hits the early-return on the
+    // next event, so no suppression flag is needed.
+    this._clearTimers();
+    this._updateClock();
+    this._clockInterval = setInterval(() => this._updateClock(), 1000);
+    void this._goLocked();
+    this.dispatchEvent(new CustomEvent("zik-locked", { bubbles: true }));
   };
 
   override connectedCallback(): void {
