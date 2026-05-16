@@ -7,9 +7,14 @@ real installation.
 
 ## Quick start
 
-```
+```bash
+# Install build-time dependencies (one-off)
 ./install-build-deps.sh --yes demo
+
+# Build Python wheel and frontend
 make setup
+
+# Start all four processes in one terminal
 make dev-demo
 ```
 
@@ -20,11 +25,45 @@ make dev-demo
 - the MPRIS bridge (idle stub),
 - Vite dev server on `127.0.0.1:5173`, proxying `/api` to the backend.
 
-Ctrl-C tears all four down.
+Open `http://localhost:5173` in a browser.  Ctrl-C tears all four processes down.
+
+## Running tests
+
+```bash
+# Python unit + integration tests
+make test
+
+# Lint (ruff + mypy)
+make lint
+
+# End-to-end (Playwright) — downloads browsers on first run
+make e2e
+```
+
+## Building a production bundle
+
+```bash
+make build
+```
+
+This builds the Python wheel and the frontend static bundle into `dist/`.
+The output is what gets packaged into a Chromebook image or an OTA release
+artifact.
+
+## Testing the OTA update flow locally
+
+`make dev-release` builds a release artifact, starts a local HTTP server, and
+prints the `tee` command to run on the target device to point it at your
+build machine:
+
+```bash
+make dev-release VERSION=1.0.0
+# Follow the printed instructions on the Chromebook to trigger an update.
+```
 
 ## Uninstall
 
-```
+```bash
 bash targets/demo/uninstall.sh          # wipes demo state + caches
 bash targets/demo/uninstall.sh --deep   # also wipes ~/.cache/ms-playwright
 ```
