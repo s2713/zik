@@ -211,6 +211,90 @@
     "en": "Device actions",
     "fr": "Actions sur l'appareil"
   },
+  "admin.device.fsck-confirm": {
+    "en": "This will reboot the device into maintenance mode to run a filesystem check. Continue?",
+    "fr": "L'appareil va redémarrer en mode maintenance pour vérifier le système de fichiers. Continuer ?"
+  },
+  "admin.device.fsck-done": {
+    "en": "Filesystem check complete.",
+    "fr": "Vérification du système de fichiers terminée."
+  },
+  "admin.device.fsck-error": {
+    "en": "Filesystem check failed.",
+    "fr": "Échec de la vérification du système de fichiers."
+  },
+  "admin.device.fsck-rebooting": {
+    "en": "Rebooting to maintenance mode for filesystem check…",
+    "fr": "Redémarrage en mode maintenance pour la vérification du système de fichiers…"
+  },
+  "admin.device.fsck-running": {
+    "en": "Scheduling…",
+    "fr": "Planification…"
+  },
+  "admin.device.reinstall-confirm": {
+    "en": "Reinstall the app from the saved release? The backend will restart.",
+    "fr": "Réinstaller l'application depuis la version sauvegardée ? Le serveur va redémarrer."
+  },
+  "admin.device.reinstall-done": {
+    "en": "App reinstalled successfully. The backend is restarting.",
+    "fr": "Application réinstallée avec succès. Le serveur redémarre."
+  },
+  "admin.device.reinstall-error": {
+    "en": "Reinstall failed.",
+    "fr": "Échec de la réinstallation."
+  },
+  "admin.device.reinstall-running": {
+    "en": "Reinstalling…",
+    "fr": "Réinstallation…"
+  },
+  "admin.phrase.checking": {
+    "en": "Checking…",
+    "fr": "Vérification…"
+  },
+  "admin.phrase.configured": {
+    "en": "Recovery phrase configured.",
+    "fr": "Phrase de récupération configurée."
+  },
+  "admin.phrase.copied": {
+    "en": "Copied to clipboard.",
+    "fr": "Copié dans le presse-papiers."
+  },
+  "admin.phrase.copy": {
+    "en": "Copy to clipboard",
+    "fr": "Copier dans le presse-papiers"
+  },
+  "admin.phrase.desc": {
+    "en": "12-word recovery phrase used to reset the admin password from maintenance mode. Write it down and store it safely — it cannot be retrieved after this.",
+    "fr": "Phrase de récupération de 12 mots permettant de réinitialiser le mot de passe administrateur depuis le mode maintenance. Notez-la et conservez-la en lieu sûr — elle ne pourra pas être récupérée ensuite."
+  },
+  "admin.phrase.error": {
+    "en": "Failed to generate recovery phrase.",
+    "fr": "Échec de la génération de la phrase de récupération."
+  },
+  "admin.phrase.generate": {
+    "en": "Generate recovery phrase",
+    "fr": "Générer la phrase de récupération"
+  },
+  "admin.phrase.regenerate": {
+    "en": "Replace recovery phrase",
+    "fr": "Remplacer la phrase de récupération"
+  },
+  "admin.phrase.replace-confirm": {
+    "en": "This will invalidate the existing phrase. Continue?",
+    "fr": "Cela invalidera la phrase existante. Continuer ?"
+  },
+  "admin.phrase.save-now": {
+    "en": "Write down this phrase now — it will not be shown again.",
+    "fr": "Notez cette phrase maintenant — elle ne sera plus affichée."
+  },
+  "admin.phrase.saved-it": {
+    "en": "I've saved it",
+    "fr": "Je l'ai notée"
+  },
+  "admin.phrase.title": {
+    "en": "Recovery phrase",
+    "fr": "Phrase de récupération"
+  },
   "admin.device.default-quota-title": {
     "en": "New user default quota",
     "fr": "Quota par défaut des nouveaux utilisateurs"

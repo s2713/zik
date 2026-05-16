@@ -16,6 +16,8 @@ mutagen = "^1.47.0"
 aiosqlite = "^0.22.1"
 python-mpd2 = ">=3.1"
 cryptography = "^48.0.0"
+argon2-cffi  = "^23"
+mnemonic     = "^0.21"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"

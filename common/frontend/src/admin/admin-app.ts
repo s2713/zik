@@ -386,6 +386,12 @@ export class AdminApp extends PlayerBase {
     }
     .dev-action-note { font-size: 0.78rem; color: #aaa; font-style: italic; }
     .dev-msg { font-size: 0.82rem; color: #1a7f37; min-height: 1em; }
+    .phrase-box {
+      font-family: monospace; font-size: 1rem; letter-spacing: 0.03em;
+      background: #f0f4ff; border: 1px solid #99b; border-radius: 6px;
+      padding: 0.6rem 0.9rem; line-height: 1.7; max-width: 480px;
+      word-break: break-word; user-select: all;
+    }
     .lock-status {
       display: inline-flex; align-items: center; gap: 0.5rem;
       padding: 0.3rem 0.75rem;
@@ -531,6 +537,17 @@ export class AdminApp extends PlayerBase {
   @state() private _backupMsg  = "";
   @state() private _backupErr  = "";
   private _importFile: File | undefined = undefined;
+
+  // ---- recovery phrase state (in device tab) ----
+  @state() private _phraseStatus: "unknown" | "set" | "unset" | "revealed" = "unknown";
+  @state() private _phraseWords  = "";   // shown once after generation, then cleared
+  @state() private _phraseMsg    = "";
+
+  // ---- fsck / reinstall state (in device tab) ----
+  @state() private _fsckPhase:      "idle" | "running" | "done" | "error" = "idle";
+  @state() private _fsckMsg         = "";
+  @state() private _reinstallPhase: "idle" | "running" | "done" | "error" = "idle";
+  @state() private _reinstallMsg    = "";
 
   // ---- audit tab state ----
   @state() private _auditEntries:  AuditEntry[] = [];
@@ -686,6 +703,87 @@ export class AdminApp extends PlayerBase {
     } catch {
       this._updatePhase = "error";
       this._updateMsg   = t("admin.update.error");
+    }
+  }
+
+  // ---- recovery phrase ---------------------------------------------------------
+
+  private async _checkPhraseStatus(): Promise<void> {
+    try {
+      const r = await fetch("/api/admin/device/recovery-phrase");
+      if (r.ok) {
+        const d = await r.json() as { set: boolean };
+        this._phraseStatus = d.set ? "set" : "unset";
+      }
+    } catch { /* ignore — status stays unknown */ }
+  }
+
+  private async _generatePhrase(): Promise<void> {
+    this._phraseMsg = "";
+    try {
+      const r = await fetch("/api/admin/device/recovery-phrase", {
+        method: "POST",
+        headers: getCsrfHeaders(),
+      });
+      const d = await r.json() as { phrase?: string; error?: string };
+      if (r.ok && d.phrase) {
+        this._phraseWords  = d.phrase;
+        this._phraseStatus = "revealed";
+      } else {
+        this._phraseMsg = d.error ?? t("admin.phrase.error");
+      }
+    } catch {
+      this._phraseMsg = t("admin.phrase.error");
+    }
+  }
+
+  // ---- fsck / reinstall --------------------------------------------------------
+
+  private async _runFsck(): Promise<void> {
+    this._fsckPhase = "running";
+    this._fsckMsg   = "";
+    try {
+      const r = await fetch("/api/admin/device/fsck", {
+        method: "POST",
+        headers: getCsrfHeaders(),
+      });
+      const d = await r.json() as { ok?: boolean; rebooting?: boolean; error?: string };
+      if (r.ok && d.ok) {
+        this._fsckPhase = "done";
+        this._fsckMsg   = d.rebooting ? t("admin.device.fsck-rebooting") : t("admin.device.fsck-done");
+      } else {
+        this._fsckPhase = "error";
+        this._fsckMsg   = d.error === "not-available-in-demo"
+          ? t("admin.device.not-in-demo")
+          : d.error ?? t("admin.device.fsck-error");
+      }
+    } catch {
+      this._fsckPhase = "error";
+      this._fsckMsg   = t("admin.device.fsck-error");
+    }
+  }
+
+  private async _runReinstall(): Promise<void> {
+    this._reinstallPhase = "running";
+    this._reinstallMsg   = "";
+    try {
+      const r = await fetch("/api/admin/device/reinstall", {
+        method: "POST",
+        headers: getCsrfHeaders(),
+      });
+      const d = await r.json() as { ok?: boolean; error?: string };
+      if (r.ok && d.ok) {
+        this._reinstallPhase = "done";
+        this._reinstallMsg   = t("admin.device.reinstall-done");
+      } else {
+        this._reinstallPhase = "error";
+        this._reinstallMsg   = d.error === "not-available-in-demo"
+          ? t("admin.device.not-in-demo")
+          : d.error ?? t("admin.device.reinstall-error");
+      }
+    } catch {
+      this._reinstallPhase = "error";
+      this._reinstallMsg   = t("admin.device.reinstall-error");
     }
   }
 
@@ -1675,17 +1773,87 @@ export class AdminApp extends PlayerBase {
         </div>
       </div>
 
-      <!-- other hardware actions (stubs) -->
+      <!-- recovery phrase -->
+      <div class="dev-section">
+        <h3>${t("admin.phrase.title")}</h3>
+        <p class="dev-action-note" style="margin:0 0 0.5rem">${t("admin.phrase.desc")}</p>
+
+        ${this._phraseStatus === "set" ? html`
+          <div class="set-msg" style="margin-bottom:0.4rem">✓ ${t("admin.phrase.configured")}</div>
+          <button class="dev-action-btn"
+                  @click=${() => { if (confirm(t("admin.phrase.replace-confirm"))) void this._generatePhrase(); }}>
+            ${t("admin.phrase.regenerate")}
+          </button>
+        ` : this._phraseStatus === "revealed" ? html`
+          <!-- shown once; admin must copy before dismissing -->
+          <p class="set-err" style="margin:0 0 0.4rem">${t("admin.phrase.save-now")}</p>
+          <div class="phrase-box">${this._phraseWords}</div>
+          <button class="dev-action-btn" style="margin-top:0.5rem"
+                  @click=${() => {
+                    void navigator.clipboard?.writeText(this._phraseWords);
+                    this._phraseMsg = t("admin.phrase.copied");
+                  }}>
+            ${t("admin.phrase.copy")}
+          </button>
+          <button class="set-btn" style="margin-top:0.5rem; margin-left:0.4rem"
+                  @click=${() => { this._phraseWords = ""; this._phraseStatus = "set"; }}>
+            ${t("admin.phrase.saved-it")}
+          </button>
+        ` : this._phraseStatus === "unset" ? html`
+          <button class="dev-action-btn"
+                  @click=${() => void this._generatePhrase()}>
+            ${t("admin.phrase.generate")}
+          </button>
+        ` : html`
+          <span class="dev-action-note">${t("admin.phrase.checking")}</span>
+        `}
+        ${this._phraseMsg ? html`<div class="set-msg" style="margin-top:0.4rem">${this._phraseMsg}</div>` : nothing}
+      </div>
+
+      <!-- fsck + reinstall -->
       <div class="dev-section">
         <h3>${t("admin.device.actions-title")}</h3>
         <div class="dev-actions">
-          ${(["format-drive", "fsck", "reinstall"] as const).map((action) => html`
-            <div class="dev-action-row">
-              <button class="dev-action-btn" disabled>
-                ${t(`admin.device.action-${action}`)}
-              </button>
-              <span class="dev-action-note">${t("admin.device.not-in-demo")}</span>
-            </div>`)}
+
+          <!-- format drive: still a stub -->
+          <div class="dev-action-row">
+            <button class="dev-action-btn" disabled>${t("admin.device.action-format-drive")}</button>
+            <span class="dev-action-note">${t("admin.device.not-in-demo")}</span>
+          </div>
+
+          <!-- fsck -->
+          <div class="dev-action-row">
+            <button class="dev-action-btn"
+                    ?disabled=${this._fsckPhase === "running"}
+                    @click=${() => {
+                      if (confirm(t("admin.device.fsck-confirm"))) void this._runFsck();
+                    }}>
+              ${this._fsckPhase === "running"
+                ? t("admin.device.fsck-running")
+                : t("admin.device.action-fsck")}
+            </button>
+            ${this._fsckMsg ? html`
+              <span class="${this._fsckPhase === "error" ? "set-err" : "set-msg"}">
+                ${this._fsckMsg}
+              </span>` : nothing}
+          </div>
+
+          <!-- reinstall -->
+          <div class="dev-action-row">
+            <button class="dev-action-btn"
+                    ?disabled=${this._reinstallPhase === "running"}
+                    @click=${() => {
+                      if (confirm(t("admin.device.reinstall-confirm"))) void this._runReinstall();
+                    }}>
+              ${this._reinstallPhase === "running"
+                ? t("admin.device.reinstall-running")
+                : t("admin.device.action-reinstall")}
+            </button>
+            ${this._reinstallMsg ? html`
+              <span class="${this._reinstallPhase === "error" ? "set-err" : "set-msg"}">
+                ${this._reinstallMsg}
+              </span>` : nothing}
+          </div>
         </div>
       </div>
     `;
@@ -1756,7 +1924,9 @@ export class AdminApp extends PlayerBase {
           <button class="tab-btn ${this._tab === tab ? "active" : ""}"
                   @click=${() => {
                     this._tab = tab;
-                    if (tab === "audit") void this._fetchAudit();
+                    if (tab === "audit")  void this._fetchAudit();
+                    if (tab === "device" && this._phraseStatus === "unknown")
+                      void this._checkPhraseStatus();
                   }}>
             ${t(`admin.tab.${tab}`)}
           </button>

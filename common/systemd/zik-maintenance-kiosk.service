@@ -1,0 +1,25 @@
+[Unit]
+Description=zik maintenance kiosk (cage + Chromium)
+After=zik-maintenance-backend.service graphical-session-pre.target
+Wants=zik-maintenance-backend.service
+PartOf=zik-maintenance.target
+
+[Service]
+Type=simple
+User=zik
+PAMName=login
+# Brief delay so the backend is ready before Chromium opens.
+ExecStartPre=/bin/sleep 2
+ExecStart=/usr/bin/cage -- \
+    /usr/bin/chromium \
+        --no-sandbox \
+        --kiosk \
+        --disable-infobars \
+        --disable-session-crashed-bubble \
+        --app=http://127.0.0.1:7071/
+Restart=on-failure
+RestartSec=5
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+
+[Install]
+WantedBy=zik-maintenance.target

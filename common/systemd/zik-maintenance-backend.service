@@ -1,0 +1,16 @@
+[Unit]
+Description=zik maintenance web app
+After=network.target zik-maintenance.target
+PartOf=zik-maintenance.target
+
+[Service]
+Type=simple
+# Runs as root so it can exec privhelp (fsck, reinstall, set-admin-password).
+User=root
+ExecStart=/opt/zik/current/venv/bin/python -m zik_backend --maintenance
+Restart=on-failure
+RestartSec=3
+Environment=ZIK_MAINT_PORT=7071 ZIK_BACKEND_HOST=127.0.0.1
+
+[Install]
+WantedBy=zik-maintenance.target

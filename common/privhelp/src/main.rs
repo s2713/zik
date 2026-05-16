@@ -2,18 +2,18 @@
 // Runs as root (setuid bit); called by the zik-backend service (non-root).
 
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{self, ErrorKind, Read, Write};
 use std::os::unix::fs as unix_fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::{Command, ExitCode, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 
-const LOCK_FILE: &str = "/var/lib/zik/adminlock";
-const RELEASES_DIR: &str = "/opt/zik/releases";
-const CURRENT_LINK: &str = "/opt/zik/current";
+const LOCK_FILE:        &str = "/var/lib/zik/adminlock";
+const RELEASES_DIR:     &str = "/opt/zik/releases";
+const CURRENT_LINK:     &str = "/opt/zik/current";
 const CURRENT_LINK_TMP: &str = "/opt/zik/current.new";
 
 #[derive(Parser, Debug)]
@@ -49,6 +49,16 @@ enum Op {
         #[arg(long)]
         frontend_dir: PathBuf,
     },
+    /// Reinstall the app from the wheel saved in the current release directory.
+    Reinstall,
+    /// Set the GRUB default entry for the next boot only (one-time boot).
+    GrubReboot {
+        /// GRUB menu entry title or number to boot once.
+        #[arg(long)]
+        entry: String,
+    },
+    /// Reset the admin system password. New plaintext password is read from stdin.
+    SetAdminPassword,
     /// Promote a NetworkManager connection from user scope to system scope.
     NmPromote {
         #[arg(long)]
@@ -59,8 +69,6 @@ enum Op {
         #[arg(long)]
         device: String,
     },
-    /// Reinstall the app from the current release directory.
-    Reinstall,
 }
 
 // ---- helpers -----------------------------------------------------------------
@@ -157,11 +165,17 @@ fn cmd_update(version: &str, wheel: &Path, frontend_dir: &Path) -> ExitCode {
     }
 
     let release_dir = Path::new(RELEASES_DIR).join(version);
-    let venv_dir = release_dir.join("venv");
+    let venv_dir    = release_dir.join("venv");
     let frontend_dest = release_dir.join("frontend");
 
     if let Err(e) = fs::create_dir_all(&release_dir) {
         return die(format!("could not create release dir: {e}"));
+    }
+
+    // Save a copy of the wheel so reinstall can use it later.
+    let wheel_copy = release_dir.join("zik_backend.whl");
+    if let Err(e) = fs::copy(wheel, &wheel_copy) {
+        eprintln!("zik-privhelp: warning: could not save wheel copy: {e}");
     }
 
     // Create a Python venv for this release.
@@ -212,6 +226,117 @@ fn cmd_update(version: &str, wheel: &Path, frontend_dir: &Path) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+// ---- reinstall ---------------------------------------------------------------
+
+fn cmd_reinstall() -> ExitCode {
+    // Resolve /opt/zik/current to find the actual release directory.
+    let current = Path::new(CURRENT_LINK);
+    let release_dir = match fs::canonicalize(current) {
+        Ok(p)  => p,
+        Err(e) => return die(format!("could not resolve {CURRENT_LINK}: {e}")),
+    };
+
+    let wheel = release_dir.join("zik_backend.whl");
+    if !wheel.is_file() {
+        return die(format!(
+            "wheel not found at {} — cannot reinstall (was this installed before P6.7?)",
+            wheel.display()
+        ));
+    }
+
+    let venv = release_dir.join("venv");
+
+    // Recreate the venv from scratch to clear any partial corruption.
+    if let Err(e) = run_cmd(
+        "python3",
+        &["-m", "venv", "--clear", venv.to_str().unwrap()],
+    ) {
+        return die(e);
+    }
+
+    // Reinstall the wheel (no-deps: all deps were frozen into the venv).
+    let pip = venv.join("bin/pip");
+    if let Err(e) = run_cmd(
+        pip.to_str().unwrap(),
+        &["install", "--quiet", "--no-deps", wheel.to_str().unwrap()],
+    ) {
+        return die(e);
+    }
+
+    // Transfer ownership back to the service user.
+    let _ = run_cmd("chown", &["-R", "zik:zik", release_dir.to_str().unwrap()]);
+
+    // Restart so the fresh venv is used immediately.
+    if let Err(e) = run_cmd("systemctl", &["restart", "zik-backend.service"]) {
+        eprintln!("zik-privhelp: warning: could not restart backend: {e}");
+    }
+
+    println!("zik-privhelp: reinstalled from {}", release_dir.display());
+    ExitCode::SUCCESS
+}
+
+// ---- grub-reboot -------------------------------------------------------------
+
+fn cmd_grub_reboot(entry: &str) -> ExitCode {
+    // Validate: only alphanumeric, spaces, hyphens, underscores allowed in the
+    // entry name to prevent shell injection via grub-reboot args.
+    if entry.is_empty()
+        || !entry
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == ' ' || c == '-' || c == '_')
+    {
+        return die("invalid GRUB entry name");
+    }
+    if let Err(e) = run_cmd("grub-reboot", &[entry]) {
+        return die(e);
+    }
+    println!("zik-privhelp: GRUB next-boot set to '{entry}'");
+    ExitCode::SUCCESS
+}
+
+// ---- set-admin-password ------------------------------------------------------
+
+fn cmd_set_admin_password() -> ExitCode {
+    // Read the new plaintext password from stdin (avoids cmdline exposure).
+    let mut new_pw = String::new();
+    if let Err(e) = io::stdin().read_to_string(&mut new_pw) {
+        return die(format!("could not read password from stdin: {e}"));
+    }
+    let new_pw = new_pw.trim();
+    if new_pw.is_empty() {
+        return die("password must not be empty");
+    }
+    if new_pw.len() < 8 {
+        return die("password must be at least 8 characters");
+    }
+
+    // chpasswd reads "username:password\n" from stdin and updates /etc/shadow.
+    let input = format!("admin:{new_pw}\n");
+    let mut child = match Command::new("chpasswd")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c)  => c,
+        Err(e) => return die(format!("could not start chpasswd: {e}")),
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input.as_bytes());
+    }
+    let output = match child.wait_with_output() {
+        Ok(o)  => o,
+        Err(e) => return die(format!("chpasswd failed: {e}")),
+    };
+    if !output.status.success() {
+        let msg = String::from_utf8_lossy(&output.stderr);
+        return die(format!("chpasswd: {}", msg.trim()));
+    }
+
+    println!("zik-privhelp: admin password updated");
+    ExitCode::SUCCESS
+}
+
 // ---- main --------------------------------------------------------------------
 
 fn main() -> ExitCode {
@@ -221,7 +346,10 @@ fn main() -> ExitCode {
         Op::Update { version, wheel, frontend_dir } => {
             cmd_update(&version, &wheel, &frontend_dir)
         }
-        Op::NmPromote { .. } | Op::FormatRemovable { .. } | Op::Reinstall => {
+        Op::Reinstall => cmd_reinstall(),
+        Op::GrubReboot { entry } => cmd_grub_reboot(&entry),
+        Op::SetAdminPassword => cmd_set_admin_password(),
+        Op::NmPromote { .. } | Op::FormatRemovable { .. } => {
             eprintln!("zik-privhelp: not yet implemented");
             ExitCode::from(2)
         }

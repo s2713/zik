@@ -1,0 +1,10 @@
+[Unit]
+Description=Zik Maintenance Mode
+# Pull in basic OS services (network, logging) but NOT the kiosk stack.
+Requires=sysinit.target basic.target
+After=sysinit.target basic.target
+# Prevent the normal graphical target from starting alongside this one.
+Conflicts=graphical.target multi-user.target
+
+[Install]
+# Not installed by default; only reached via GRUB entry (systemd.unit=zik-maintenance.target).

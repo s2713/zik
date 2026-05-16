@@ -424,6 +424,53 @@ GRUB_TERMINAL=console
 GRUB_DISABLE_RECOVERY=true
 GRUB_EOF
 
+# ---- step 11b: GRUB password gate + maintenance entry -----------------------
+#
+# The maintenance GRUB entry lets the admin boot into a minimal recovery
+# environment (systemd.unit=zik-maintenance.target) for fsck, reinstall, and
+# password reset (C.32).
+#
+# The entry is protected by the GRUB superuser password so only someone who
+# knows the admin password (set by configure-image.sh) can select it.
+# Normal boot (timeout=0, auto-select entry 0) never prompts for a password.
+#
+# The password hash (@GRUB_PW_HASH@) is a placeholder; configure-image.sh
+# replaces it with a real grub-mkpasswd-pbkdf2 hash derived from admin_password.
+
+section "GRUB password gate + maintenance entry"
+
+# 01_zik_password: sets superusers + PBKDF2 hash (placeholder filled by configure-image.sh).
+cat > "${CHROOT}/etc/grub.d/01_zik_password" << 'GRUBPW_EOF'
+#!/bin/sh
+exec tail -n +4 "$0"
+set superusers="admin"
+password_pbkdf2 admin @GRUB_PW_HASH@
+GRUBPW_EOF
+chmod +x "${CHROOT}/etc/grub.d/01_zik_password"
+
+# 41_zik_maintenance: password-gated maintenance menuentry.
+# The kernel path uses the same vmlinuz/initrd as the primary entry; the only
+# difference is the systemd.unit= parameter on the command line.
+KERNEL_VER="$(ls "${CHROOT}/boot/vmlinuz-"* 2>/dev/null | sort -V | tail -1 | \
+              xargs -r basename | sed 's/vmlinuz-//')"
+if [[ -z "${KERNEL_VER}" ]]; then
+    die "could not determine kernel version for maintenance GRUB entry"
+fi
+
+cat > "${CHROOT}/etc/grub.d/41_zik_maintenance" << GRUBMAINT_EOF
+#!/bin/sh
+exec tail -n +4 "\$0"
+menuentry "Zik -- Maintenance" {
+    search --no-floppy --label --set=root zik-root
+    linux  /boot/vmlinuz-${KERNEL_VER} root=LABEL=zik-root ro quiet ${CMDLINE} systemd.unit=zik-maintenance.target
+    initrd /boot/initrd.img-${KERNEL_VER}
+}
+GRUBMAINT_EOF
+chmod +x "${CHROOT}/etc/grub.d/41_zik_maintenance"
+
+info "GRUB maintenance entry written for kernel ${KERNEL_VER}"
+info "NOTE: run configure-image.sh with admin_password to set the GRUB password hash"
+
 # ---- step 12: enable systemd units ------------------------------------------
 
 section "Enabling systemd units"
@@ -435,6 +482,13 @@ run_chroot systemctl enable \
     bluetooth.service \
     pipewire.socket \
     pipewire-pulse.socket
+
+# Maintenance units: not enabled by default (only active when booted via
+# systemd.unit=zik-maintenance.target), but must be installed so systemd can find them.
+cp "${REPO_ROOT}/common/systemd/zik-maintenance.target"          "${CHROOT}/lib/systemd/system/"
+cp "${REPO_ROOT}/common/systemd/zik-maintenance-backend.service" "${CHROOT}/lib/systemd/system/"
+cp "${REPO_ROOT}/common/systemd/zik-maintenance-kiosk.service"   "${CHROOT}/lib/systemd/system/"
+info "maintenance mode units installed (not enabled in normal boot)"
 
 # ---- step 13: first-boot gate ------------------------------------------------
 
