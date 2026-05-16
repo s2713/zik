@@ -114,9 +114,10 @@ PYEOF
 ESP_MIB="$(read_part esp size_mib)"
 ROOT_MIB="$(read_part root size_mib)"
 MAINT_MIB="$(read_part maintenance size_mib)"
+SWAP_MIB="$(read_part swap size_mib)"
 # data: size_mib=0 → fill remaining space (handled by parted mkpart).
 
-TOTAL_FIXED_MIB=$(( ESP_MIB + ROOT_MIB + MAINT_MIB ))
+TOTAL_FIXED_MIB=$(( ESP_MIB + ROOT_MIB + MAINT_MIB + SWAP_MIB ))
 # Add 64 MiB overhead for GPT headers and alignment slack.
 IMAGE_MIB=$(( TOTAL_FIXED_MIB + 64 ))
 # Data partition fills remaining space; the final image size is set large
@@ -451,8 +452,8 @@ chmod +x "${CHROOT}/etc/grub.d/01_zik_password"
 # 41_zik_maintenance: password-gated maintenance menuentry.
 # The kernel path uses the same vmlinuz/initrd as the primary entry; the only
 # difference is the systemd.unit= parameter on the command line.
-KERNEL_VER="$(ls "${CHROOT}/boot/vmlinuz-"* 2>/dev/null | sort -V | tail -1 | \
-              xargs -r basename | sed 's/vmlinuz-//')"
+KERNEL_VER="$(find "${CHROOT}/boot" -maxdepth 1 -name 'vmlinuz-*' 2>/dev/null | \
+              sort -V | tail -1 | xargs -r basename | sed 's/vmlinuz-//')"
 if [[ -z "${KERNEL_VER}" ]]; then
     die "could not determine kernel version for maintenance GRUB entry"
 fi
@@ -511,6 +512,31 @@ AcceptEnv LANG LC_*
 SSHEOF
 run_chroot systemctl enable ssh
 
+# ---- step 14b: suspend-then-hibernate + powertop setup -----------------------
+
+section "Configuring suspend-then-hibernate"
+
+# systemd sleep config: auto-hibernate after 2h in suspend state.
+mkdir -p "${CHROOT}/etc/systemd/sleep.conf.d"
+cat > "${CHROOT}/etc/systemd/sleep.conf.d/zik.conf" << 'SLEEP_EOF'
+[Sleep]
+HibernateDelaySec=2h
+SLEEP_EOF
+
+# Tell initramfs-tools which device to resume from; label is resolved by udev.
+mkdir -p "${CHROOT}/etc/initramfs-tools/conf.d"
+cat > "${CHROOT}/etc/initramfs-tools/conf.d/resume" << 'RESUME_EOF'
+RESUME=LABEL=ZIK-SWAP
+RESUME_EOF
+
+# Rebuild initramfs with the resume hook included.
+run_chroot update-initramfs -u
+info "initramfs rebuilt with RESUME=LABEL=ZIK-SWAP"
+
+# powertop unit: apply --auto-tune once at boot for S0ix power savings.
+cp "${REPO_ROOT}/common/systemd/zik-powertop.service" "${CHROOT}/lib/systemd/system/"
+run_chroot systemctl enable zik-powertop.service
+
 umount_chroot_fs
 
 # ---- step 15: create raw disk image -----------------------------------------
@@ -525,12 +551,16 @@ truncate -s "${IMAGE_SIZE_BYTES}" "${IMAGE_RAW}"
 info "partitioning"
 parted -s "${IMAGE_RAW}" \
     mklabel gpt \
-    mkpart ZIK-EFI   fat32   1MiB          $(( 1 + ESP_MIB ))MiB \
-    mkpart ZIK-ROOT  ext4    $(( 1 + ESP_MIB ))MiB  $(( 1 + ESP_MIB + ROOT_MIB ))MiB \
-    mkpart ZIK-MAINT ext4    $(( 1 + ESP_MIB + ROOT_MIB ))MiB  \
-                             $(( 1 + ESP_MIB + ROOT_MIB + MAINT_MIB ))MiB \
-    mkpart ZIK-DATA  "$(read_part data fs)"  \
-                             $(( 1 + ESP_MIB + ROOT_MIB + MAINT_MIB ))MiB  100% \
+    mkpart ZIK-EFI   fat32      1MiB \
+                                $(( 1 + ESP_MIB ))MiB \
+    mkpart ZIK-ROOT  ext4       $(( 1 + ESP_MIB ))MiB \
+                                $(( 1 + ESP_MIB + ROOT_MIB ))MiB \
+    mkpart ZIK-MAINT ext4       $(( 1 + ESP_MIB + ROOT_MIB ))MiB \
+                                $(( 1 + ESP_MIB + ROOT_MIB + MAINT_MIB ))MiB \
+    mkpart ZIK-SWAP  linux-swap $(( 1 + ESP_MIB + ROOT_MIB + MAINT_MIB ))MiB \
+                                $(( 1 + ESP_MIB + ROOT_MIB + MAINT_MIB + SWAP_MIB ))MiB \
+    mkpart ZIK-DATA  "$(read_part data fs)" \
+                                $(( 1 + ESP_MIB + ROOT_MIB + MAINT_MIB + SWAP_MIB ))MiB  100% \
     set 1 esp on \
     set 1 boot on
 
@@ -545,7 +575,8 @@ sleep 1
 P_ESP="${LOOP_DEV}p1"
 P_ROOT="${LOOP_DEV}p2"
 P_MAINT="${LOOP_DEV}p3"
-P_DATA="${LOOP_DEV}p4"
+P_SWAP="${LOOP_DEV}p4"
+P_DATA="${LOOP_DEV}p5"
 
 # ---- step 16: format partitions ----------------------------------------------
 
@@ -557,6 +588,9 @@ mkfs.ext4 -q -L ZIK-ROOT -F "${P_ROOT}"
 
 info "formatting maintenance (ext4)"
 mkfs.ext4 -q -L ZIK-MAINT -F "${P_MAINT}"
+
+info "formatting swap"
+mkswap -L ZIK-SWAP "${P_SWAP}"
 
 info "formatting data (f2fs)"
 mkfs.f2fs -q -l ZIK-DATA -f "${P_DATA}"
@@ -581,12 +615,14 @@ rsync -aHAX --exclude=/proc --exclude=/sys --exclude=/dev --exclude=/tmp \
 # Write fstab.
 ROOT_UUID="$(blkid -s UUID -o value "${P_ROOT}")"
 ESP_UUID="$(blkid  -s UUID -o value "${P_ESP}")"
+SWAP_UUID="$(blkid -s UUID -o value "${P_SWAP}")"
 DATA_UUID="$(blkid -s UUID -o value "${P_DATA}")"
 
 cat > "${MOUNT_ROOT}/etc/fstab" << FSTAB_EOF
 # <file system>                         <mount>         <type>  <options>               <dump> <pass>
 UUID=${ROOT_UUID}  /               ext4    ro,relatime             0 1
 UUID=${ESP_UUID}   /boot/efi       vfat    umask=0077              0 2
+UUID=${SWAP_UUID}  none            swap    sw                      0 0
 UUID=${DATA_UUID}  /var/lib/zik    f2fs    lazytime,discard        0 2
 tmpfs                                   /tmp            tmpfs   defaults,size=256M      0 0
 tmpfs                                   /var/log/zik    tmpfs   defaults,size=64M       0 0

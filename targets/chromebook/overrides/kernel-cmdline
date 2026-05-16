@@ -18,3 +18,6 @@ snd_intel_dspcfg.dsp_driver=1
 
 # Disable the NMI watchdog to reduce wakeups (battery life).
 nmi_watchdog=0
+
+# Resume device for suspend-then-hibernate / hibernate-now (P6.8).
+resume=LABEL=ZIK-SWAP

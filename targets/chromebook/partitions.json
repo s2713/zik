@@ -30,6 +30,15 @@
       "_note":    "Separate GRUB entry; contains fsck, password-reset, reinstall tools (P6.7)."
     },
     {
+      "role":     "swap",
+      "label":    "ZIK-SWAP",
+      "size_mib": 4096,
+      "type":     "linux-swap",
+      "fs":       "swap",
+      "mount":    null,
+      "_note":    "Dedicated swap for suspend-then-hibernate (P6.8). Must be >= RAM size."
+    },
+    {
       "role":     "data",
       "label":    "ZIK-DATA",
       "size_mib": 0,
