@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 _API_VERSION = "1.16.1"
 _CLIENT_NAME = "zik"
-_PAGE_SIZE = 500     # songs per search3 request
-_MAX_SONGS  = 5000   # cap total library fetch to avoid unbounded loops
+_PAGE_SIZE = 500      # songs per search3 request
+_MAX_SONGS  = 100_000  # safety cap; real termination is an empty page from the server
 
 
 def _md5(text: str) -> str:
