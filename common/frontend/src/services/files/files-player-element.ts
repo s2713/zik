@@ -292,6 +292,7 @@ export class FilesPlayerElement extends PlayerBase {
   @state() private _enabledSources: Set<string>      = new Set(["internal"]);
   @state() private _showAddLan      = false;
   @state() private _expandedDirs:   Set<string>      = new Set();
+  @state() private _scanning        = false;
 
   // search fields (not @state; debounced via _searchTick)
   private _qArtist = "";
@@ -358,9 +359,8 @@ export class FilesPlayerElement extends PlayerBase {
       await fetch(`/api/files/sources/${sourceId}/mount`, {
         method: "POST", headers: { ...getCsrfHeaders() },
       });
-      await new Promise((r) => setTimeout(r, 400));
       await this._fetchSources();
-      await this._fetchTracks();
+      await this._pollScanDone();
     } catch { /* backend unavailable */ }
   }
 
@@ -410,11 +410,29 @@ export class FilesPlayerElement extends PlayerBase {
     } catch { /* backend unavailable */ }
   }
 
+  /** Poll /api/files/scan/status every 800 ms until the backend reports idle,
+   *  keeping _scanning true while in progress, then refresh the track list. */
+  private async _pollScanDone(): Promise<void> {
+    this._scanning = true;
+    try {
+      // Give the backend a moment to flip the source to "running" before we start polling.
+      await new Promise((r) => setTimeout(r, 300));
+      while (true) {
+        const r = await fetch("/api/files/scan/status");
+        const data = await r.json() as { scanning: boolean };
+        if (!data.scanning) break;
+        await new Promise((r) => setTimeout(r, 800));
+      }
+      await this._fetchTracks();
+    } catch { /* backend unavailable */ }
+    finally { this._scanning = false; }
+  }
+
   private async _scan(): Promise<void> {
     try {
-      await fetch("/api/files/scan", { method: "POST", headers: { ...getCsrfHeaders() } });
-      await new Promise((r) => setTimeout(r, 600));
-      await this._fetchTracks();
+      const r = await fetch("/api/files/scan", { method: "POST", headers: { ...getCsrfHeaders() } });
+      if (!r.ok) return;
+      await this._pollScanDone();
     } catch { /* backend unavailable */ }
   }
 
@@ -813,7 +831,10 @@ export class FilesPlayerElement extends PlayerBase {
             <button class="src-btn danger" @click=${() => void this._removeLanSource(s.id)}>✕</button>
           ` : nothing}
         `)}
-        <button class="src-btn" @click=${() => void this._scan()}>⟳ Scan</button>
+        <button class="src-btn" ?disabled=${this._scanning}
+                @click=${() => void this._scan()}>
+          ${this._scanning ? "⟳ Scanning…" : "⟳ Scan"}
+        </button>
         <button class="src-btn" @click=${() => { this._showAddLan = !this._showAddLan; }}>+ LAN</button>
       </div>
 

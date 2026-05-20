@@ -13,8 +13,11 @@ from starlette.routing import Route
 
 from .db import LibraryDB
 from .gvfs import gvfs_mount, gvfs_mount_path, gvfs_unmount
-from .scanner import scan_directory
+from .scanner import AUDIO_EXTS, scan_file, track_id
 from .sources import Source, SourceManager
+
+# Per-source scan state: "idle" | "running".  Read by the status endpoint.
+_scan_status: dict[str, str] = {}
 
 logger = logging.getLogger(__name__)
 
@@ -86,17 +89,50 @@ def make_files_router(db: LibraryDB, source_manager: SourceManager) -> list:
     """Return Starlette Route objects; db and source_manager captured by closure."""
 
     async def _scan_source(source: Source) -> None:
-        """Scan one mounted source and update the library index for it."""
+        """Incrementally update the library index for one mounted source.
+
+        Uses cached path→mtime from the DB: files whose mtime is unchanged skip
+        the mutagen read entirely, making repeated scans of network shares fast.
+        """
         logger.info("files scan started: source=%s root=%s", source.id, source.root)
-        live: set[str] = set()
-        count = 0
-        for row in scan_directory(source.root):
-            row["source_id"] = source.id
-            await db.upsert_track(row)
-            live.add(row["id"])
-            count += 1
-        await db.delete_stale_for_source(source.id, live)
-        logger.info("files scan done: source=%s %d tracks", source.id, count)
+        _scan_status[source.id] = "running"
+        try:
+            known = await db.get_mtime_map(source.id)  # path → last-indexed mtime
+            live: set[str] = set()
+            updated = 0
+            for dirpath, _dirs, filenames in os.walk(source.root):
+                for name in filenames:
+                    if os.path.splitext(name)[1].lower() not in AUDIO_EXTS:
+                        continue
+                    path = os.path.join(dirpath, name)
+                    try:
+                        mtime = os.path.getmtime(path)
+                    except OSError:
+                        continue
+                    tid = track_id(path)
+                    live.add(tid)
+                    if known.get(path) == mtime:
+                        continue  # unchanged — skip the network metadata read
+                    row = scan_file(path, mtime)
+                    if row is None:
+                        continue
+                    row["source_id"] = source.id
+                    await db.upsert_track(row)
+                    updated += 1
+            await db.delete_stale_for_source(source.id, live)
+            logger.info(
+                "files scan done: source=%s %d updated / %d live",
+                source.id, updated, len(live),
+            )
+        finally:
+            _scan_status[source.id] = "idle"
+
+    async def scan_status(_request: Request) -> JSONResponse:
+        """Return the current scan state for every known source."""
+        return JSONResponse({
+            "scanning": any(v == "running" for v in _scan_status.values()),
+            "sources":  dict(_scan_status),
+        })
 
     async def scan(request: Request) -> JSONResponse:
         """Trigger a rescan of all currently mounted sources."""
@@ -272,6 +308,7 @@ def make_files_router(db: LibraryDB, source_manager: SourceManager) -> list:
         return JSONResponse({"ok": True})
 
     return [
+        Route("/api/files/scan/status",                 scan_status),
         Route("/api/files/scan",                        scan,          methods=["POST"]),
         Route("/api/files/tracks",                      list_tracks),
         Route("/api/files/audio/{track_id}",            audio),

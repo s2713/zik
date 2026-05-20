@@ -103,6 +103,20 @@ export class AdminApp extends PlayerBase {
       border-bottom: 2px solid #fff;
     }
 
+    .logout-btn {
+      margin-left: auto;
+      padding: 0.35rem 0.9rem;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      background: transparent;
+      color: #666;
+      font-size: 0.88rem;
+      cursor: pointer;
+      align-self: center;
+      transition: background 0.15s, color 0.15s;
+    }
+    .logout-btn:hover { background: #fef2f2; color: #b91c1c; border-color: #fca5a5; }
+
     /* ---- stub panels ---- */
     .stub { color: #888; font-style: italic; }
 
@@ -923,6 +937,14 @@ export class AdminApp extends PlayerBase {
       this._svcErr = { ...this._svcErr, [id]: t("admin.services.err-failed") };
       this._svcMsg = { ...this._svcMsg, [id]: "" };
     }
+  }
+
+  // ---- session ----
+
+  private async _logout(): Promise<void> {
+    /** GET logout (no CSRF needed) then reload; main.ts re-evaluates session → lock screen. */
+    await fetch("/api/session/logout");
+    window.location.reload();
   }
 
   // ---- users data helpers ----
@@ -1931,6 +1953,9 @@ export class AdminApp extends PlayerBase {
             ${t(`admin.tab.${tab}`)}
           </button>
         `)}
+        <button class="logout-btn" @click=${() => void this._logout()}>
+          ${t("shell.logout")}
+        </button>
       </nav>
 
       ${this._tab === "users"    ? this._renderUsers()    : nothing}

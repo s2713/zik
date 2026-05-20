@@ -155,6 +155,15 @@ class LibraryDB:
             rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
+    async def get_mtime_map(self, source_id: str) -> dict[str, float]:
+        """Return {path: mtime} for all tracks belonging to source_id."""
+        db = await self._ensure_open()
+        async with db.execute(
+            "SELECT path, mtime FROM tracks WHERE source_id = ?", (source_id,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return {row["path"]: row["mtime"] for row in rows}
+
     async def get_track(self, track_id: str) -> dict | None:
         """Return a single track dict or None if not found."""
         db = await self._ensure_open()

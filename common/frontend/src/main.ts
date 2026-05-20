@@ -32,6 +32,9 @@ async function init(): Promise<void> {
       document.body.appendChild(document.createElement("user-shell"));
   }
 
+  // Remove the static placeholder from index.html; it is only shown while JS loads.
+  document.getElementById("app")?.remove();
+
   // Any role switch (user ↔ admin) requires a full re-init.
   window.addEventListener(USER_CHANGED_EVENT, (e) => {
     const newUser  = (e as CustomEvent<string>).detail;

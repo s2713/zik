@@ -119,10 +119,22 @@ def make_session_router(sessions: dict, users: dict | None = None,
             sessions[sid]["locked"] = True
         return JSONResponse({"ok": True})
 
+    async def logout(request: Request) -> JSONResponse:
+        """Clear the active user from the session (returns to guest/lock screen)."""
+        sid = request.cookies.get("__Host-zik-session")
+        if sid and sid in sessions:
+            sessions[sid].pop("user", None)
+            sessions[sid].pop("is_admin", None)
+            sessions[sid].pop("reauth_at", None)
+        return JSONResponse({"ok": True})
+
     return [
-        Route("/api/users",           list_users),
-        Route("/api/session",         get_session),
-        Route("/api/session/login",   login,  methods=["POST"]),
-        Route("/api/session/reauth",  reauth, methods=["POST"]),
-        Route("/api/session/lock",    lock,   methods=["POST"]),
+        Route("/api/users",            list_users),
+        Route("/api/session",          get_session),
+        Route("/api/session/login",    login,   methods=["POST"]),
+        Route("/api/session/reauth",   reauth,  methods=["POST"]),
+        Route("/api/session/lock",     lock,    methods=["POST"]),
+        # Logout is GET so no CSRF token is required; samesite=strict protects
+        # against cross-origin logout forcing (session cookie is not sent cross-site).
+        Route("/api/session/logout",   logout,  methods=["GET"]),
     ]
