@@ -18,6 +18,7 @@ interface Source {
   label: string;
   kind: string;
   mounted: boolean;
+  root?: string;   // absolute path on the backend; used to strip prefix for relative paths
   config?: Record<string, string>;
 }
 
@@ -25,6 +26,23 @@ interface LanForm {
   label: string; server: string; share: string;
   subpath: string; username: string; password: string;
 }
+
+// ---- FS tree types ----
+
+interface FsDir {
+  kind: "dir";
+  name: string;
+  key: string;          // unique: "s:{sourceId}" for roots, "d:{sourceId}::{relPath}" for subdirs
+  children: FsNode[];
+  allTracks: FileTrack[]; // all tracks in this subtree
+}
+
+interface FsFile {
+  kind: "file";
+  track: FileTrack;
+}
+
+type FsNode = FsDir | FsFile;
 
 // ---- helpers ----
 
@@ -52,12 +70,48 @@ function parseYearFilter(s: string): { from: number; to: number } | null {
   return null;
 }
 
-
-type SortCol = "artist" | "album" | "track" | "year" | "source";
+/** Format seconds as M:SS. */
+function fmtDur(s: number): string {
+  const m = Math.floor(s / 60);
+  const ss = Math.floor(s % 60).toString().padStart(2, "0");
+  return `${m}:${ss}`;
+}
 
 /**
- * Files service player: two-panel search + queue UI.
- * Left panel: library search with artist/album/year/track filters and source checkboxes.
+ * Return the longest common directory prefix of a list of absolute paths.
+ * Result always ends with "/" so it can be used directly as a strip prefix.
+ * Returns "" when the list is empty or no common prefix exists.
+ */
+function commonDirPrefix(paths: string[]): string {
+  if (paths.length === 0) return "";
+  // Start from the shortest path's parent directory.
+  let prefix = paths[0].slice(0, paths[0].lastIndexOf("/") + 1);
+  for (const p of paths) {
+    while (prefix && !p.startsWith(prefix)) {
+      // Walk up one directory level.
+      prefix = prefix.slice(0, prefix.lastIndexOf("/", prefix.length - 2) + 1);
+    }
+  }
+  return prefix;
+}
+
+/** Recursively sort a dir's children: subdirs alphabetically first, then files by track_number/title. */
+function sortFsDir(dir: FsDir): void {
+  dir.children.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === "dir" ? -1 : 1;
+    if (a.kind === "dir" && b.kind === "dir") return a.name.localeCompare(b.name);
+    if (a.kind === "file" && b.kind === "file") {
+      const tn = (a.track.track_number ?? 9999) - (b.track.track_number ?? 9999);
+      return tn !== 0 ? tn : a.track.title.localeCompare(b.track.title);
+    }
+    return 0;
+  });
+  for (const c of dir.children) if (c.kind === "dir") sortFsDir(c);
+}
+
+/**
+ * Files service player: two-panel FS tree + queue UI.
+ * Left panel: filesystem hierarchy with metadata filters and path/name search.
  * Right panel: shared <queue-panel> element (cross-service play queue).
  */
 @customElement("files-player")
@@ -145,82 +199,85 @@ export class FilesPlayerElement extends PlayerBase {
       width: 100%; box-sizing: border-box;
     }
     .search-fields input:focus { outline: none; border-color: #60a5fa; }
-    .search-results { flex: 1; overflow-y: auto; padding: 0.5rem; }
+    .search-fields .sep { grid-column: 1 / -1; border: none; border-top: 1px solid #1e293b; margin: 0.1rem 0; }
+    .search-results { flex: 1; overflow-y: auto; padding: 0.25rem 0; }
 
-    /* ---- hierarchical search results ---- */
-    .result-header {
-      display: grid;
-      grid-template-columns: 36px 32px 1fr 1fr 1fr 3.5em 5.5em auto;
-      align-items: center; gap: 0.3rem;
-      padding: 0.2rem 0.5rem;
-      background: #1e293b; border-bottom: 1px solid #334155;
-      font-size: 0.75em; flex-shrink: 0;
-    }
-    .sort-btn {
-      background: none; border: none; color: #64748b;
-      cursor: pointer; padding: 0.05em 0;
-      font-size: 1em; text-align: left; white-space: nowrap;
-    }
-    .sort-btn:hover { color: #94a3b8; }
-    .sort-btn.active { color: #60a5fa; }
-
-    .result-row {
-      display: grid;
-      grid-template-columns: 36px 32px 1fr 1fr 1fr 3.5em 5.5em auto;
-      align-items: center; gap: 0.3rem;
+    /* ---- FS tree rows ---- */
+    .fs-node {
+      display: flex; align-items: center; gap: 0.4rem;
       padding: 0.25rem 0.5rem;
       border-bottom: 1px solid rgba(255,255,255,0.03);
+      min-width: 0;
     }
-    .result-row:hover    { background: rgba(255,255,255,0.05); }
-    .result-row.selected { background: rgba(96,165,250,0.10); }
-    .result-row[draggable] { cursor: grab; }
-    /* Visual hierarchy via left border; indentation via padding on the first cell only
-       so all other columns stay aligned with the header. */
-    .result-row.row-album { border-left: 3px solid #334155; }
-    .result-row.row-track  { border-left: 3px solid #475569; }
-    .result-row.row-album > :first-child { padding-left: 0.65rem; }
-    .result-row.row-track  > :first-child { padding-left: 1.3rem; }
+    .fs-node:hover { background: rgba(255,255,255,0.05); }
+    .fs-node.is-dir { background: rgba(255,255,255,0.02); }
+    .fs-node.is-dir:hover { background: rgba(255,255,255,0.06); }
+    /* selected must come last to win over is-dir with equal specificity */
+    .fs-node.selected,
+    .fs-node.is-dir.selected { background: rgba(96,165,250,0.22); }
+    .fs-node[draggable] { cursor: grab; }
 
-    .expand-icon {
+    .node-expander {
+      flex-shrink: 0;
       color: #475569; font-size: 0.75em; user-select: none;
       display: inline-flex; align-items: center; justify-content: center;
-      width: 1.4em; transition: transform 0.15s;
+      width: 1.4em; height: 1.4em; transition: transform 0.15s;
       background: none; border: none; padding: 0; cursor: pointer;
     }
-    .expand-icon:hover { color: #94a3b8; }
-    .expand-icon.open  { transform: rotate(90deg); }
+    .node-expander:hover { color: #94a3b8; }
+    .node-expander.open { transform: rotate(90deg); }
+    /* placeholder for leaf nodes to keep names aligned */
+    .node-expander-ph { width: 1.4em; flex-shrink: 0; }
 
-    /* selection indicator in the column header */
-    .sel-info  { color: #7dd3fc; margin-left: 0.5em; font-weight: normal; }
+    .node-thumb-wrap {
+      flex-shrink: 0; width: 28px; height: 28px;
+      border-radius: 3px; overflow: hidden; position: relative;
+    }
+    .node-thumb-ph {
+      width: 28px; height: 28px; border-radius: 3px;
+      background: #334155; display: flex; align-items: center;
+      justify-content: center; font-size: 0.8em; color: #475569;
+    }
+
+    .node-name {
+      flex: 1; min-width: 0;
+      font-size: 0.83em; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .node-name.dir-name { font-weight: 600; color: #e2e8f0; }
+
+    .node-meta {
+      flex-shrink: 0; display: flex; gap: 0.5rem; align-items: center;
+      font-size: 0.74em; color: #64748b; white-space: nowrap;
+    }
+
+    /* selection indicator */
+    .sel-info  { color: #7dd3fc; font-size: 0.78em; margin-left: 0.5em; }
     .sel-clear {
       margin-left: 0.25em; font-size: 0.85em;
       background: none; border: none; color: #94a3b8; cursor: pointer; padding: 0;
     }
     .sel-clear:hover { color: #f1f5f9; }
 
-    .row-cell {
-      font-size: 0.82em; white-space: nowrap;
-      overflow: hidden; text-overflow: ellipsis; min-width: 0;
-    }
-    .row-cell.dim    { color: #64748b; font-size: 0.75em; }
-    .row-cell.strong { font-weight: 600; }
-
-    .row-thumb { width: 32px; height: 32px; border-radius: 3px; object-fit: cover; }
-    .row-thumb-ph {
-      width: 32px; height: 32px; border-radius: 3px;
-      background: #334155; display: flex; align-items: center;
-      justify-content: center; font-size: 0.9em; color: #475569;
-    }
-
+    /* action buttons */
     .row-actions { display: flex; gap: 2px; flex-shrink: 0; }
     .row-act {
-      font-size: 0.88em; padding: 0.45em 0.7em;
+      font-size: 0.85em; padding: 0.4em 0.65em;
       background: #334155; border: none; color: #f1f5f9;
       border-radius: 3px; cursor: pointer;
     }
     .row-act:hover { background: #475569; }
     .row-act.play-now { background: #1d4ed8; }
     .row-act.play-now:hover { background: #2563eb; }
+
+    /* tree info bar */
+    .tree-info {
+      flex-shrink: 0;
+      padding: 0.2rem 0.75rem;
+      background: #1e293b; border-bottom: 1px solid #334155;
+      font-size: 0.75em; color: #64748b;
+      display: flex; align-items: center; gap: 0.75rem;
+    }
 
     /* empty states */
     .empty { color: #475569; font-size: 0.85em; padding: 1.5rem; text-align: center; }
@@ -234,16 +291,14 @@ export class FilesPlayerElement extends PlayerBase {
   @state() private _sources:        Source[]         = [];
   @state() private _enabledSources: Set<string>      = new Set(["internal"]);
   @state() private _showAddLan      = false;
-  @state() private _expandedArtists: Set<string> = new Set();
-  @state() private _expandedAlbums:  Set<string> = new Set();
-  @state() private _sortCol: SortCol = "artist";
-  @state() private _sortDir: 1 | -1  = 1;
+  @state() private _expandedDirs:   Set<string>      = new Set();
 
   // search fields (not @state; debounced via _searchTick)
   private _qArtist = "";
   private _qAlbum  = "";
   private _qYear   = "";
   private _qTrack  = "";
+  private _qPath   = "";
   @state() private _searchTick = 0;
 
   private _lanForm: LanForm = { label: "", server: "", share: "",
@@ -268,9 +323,6 @@ export class FilesPlayerElement extends PlayerBase {
       this._emitSelectionState();
     }
   };
-
-  // artist-image cache: name → URL | null (null = not found / pending)
-  private _artistImages: Record<string, string | null> = {};
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -373,46 +425,114 @@ export class FilesPlayerElement extends PlayerBase {
     this._debounceTimer = setTimeout(() => { this._searchTick++; }, 150);
   }
 
-  /** Derive the display mode from which search fields are filled. */
-  private _displayMode(): "artists" | "albums" | "tracks" {
-    if (this._qTrack.trim()) return "tracks";
-    if (this._qAlbum.trim() || this._qYear.trim()) return "albums";
-    return "artists";  // empty or artist-only → all/filtered artists
+  /** Return true when any filter field is non-empty. */
+  private _anyFilterActive(): boolean {
+    return !!(this._qArtist.trim() || this._qAlbum.trim() || this._qYear.trim()
+           || this._qTrack.trim()  || this._qPath.trim());
   }
 
+  /**
+   * Per-source path prefixes derived from the FULL library (all tracks, unfiltered).
+   * Using the full set guarantees the prefix is stable regardless of what filter is
+   * active — filtering down to a single directory must not cause that directory to be
+   * absorbed into the prefix and disappear from the tree.
+   */
+  private _sourcePrefixes(): Map<string, string> {
+    const bySource = new Map<string, string[]>();
+    for (const t of this._tracks) {
+      if (!bySource.has(t.source_id)) bySource.set(t.source_id, []);
+      bySource.get(t.source_id)!.push(t.path);
+    }
+    return new Map([...bySource.entries()].map(([sid, paths]) =>
+      [sid, commonDirPrefix(paths)]
+    ));
+  }
+
+  /** Apply all active filter fields and return matching tracks. */
   private _filteredTracks(): FileTrack[] {
     let tracks = this._tracks.filter(t => this._enabledSources.has(t.source_id));
     const qa = this._qArtist.trim().toLowerCase();
     const qb = this._qAlbum.trim().toLowerCase();
     const yr = parseYearFilter(this._qYear);
     const qt = this._qTrack.trim().toLowerCase();
-    if (qa)  tracks = tracks.filter(t => t.artist.toLowerCase().includes(qa));
-    if (qb)  tracks = tracks.filter(t => t.album.toLowerCase().includes(qb));
-    if (yr)  tracks = tracks.filter(t => t.year !== null && t.year >= yr.from && t.year <= yr.to);
-    if (qt)  tracks = tracks.filter(t => t.title.toLowerCase().includes(qt));
+    const qp = this._qPath.trim().toLowerCase();
+    if (qa) tracks = tracks.filter(t => t.artist.toLowerCase().includes(qa));
+    if (qb) tracks = tracks.filter(t => t.album.toLowerCase().includes(qb));
+    if (yr) tracks = tracks.filter(t => t.year !== null && t.year >= yr.from && t.year <= yr.to);
+    if (qt) tracks = tracks.filter(t => t.title.toLowerCase().includes(qt));
+    if (qp) {
+      const prefixes = this._sourcePrefixes();
+      tracks = tracks.filter(t => {
+        const pfx = prefixes.get(t.source_id) ?? "";
+        const rel = pfx && t.path.startsWith(pfx) ? t.path.slice(pfx.length) : t.path.replace(/^\//, "");
+        return rel.toLowerCase().split("/").filter(Boolean).some(p => p.includes(qp));
+      });
+    }
     return tracks;
   }
 
-  // ---- artist image ----
+  // ---- FS tree builder ----
 
-  private _loadArtistImage(artist: string): string | null {
-    if (artist in this._artistImages) return this._artistImages[artist];
-    this._artistImages[artist] = null;  // prevent duplicate fetch
-    void fetch(`/api/files/artist-image?name=${encodeURIComponent(artist)}`)
-      .then(r => r.ok ? r.json() as Promise<{ url: string }> : null)
-      .then(data => {
-        const url = (data as { url?: string } | null)?.url ?? null;
-        if (url) {
-          this._artistImages[artist] = url;
-          this.requestUpdate();
+  /**
+   * Build a forest of FsDir roots, one per active source with matching tracks.
+   * Each source root contains nested FsDir and FsFile children reflecting the actual filesystem.
+   */
+  private _buildFsTree(tracks: FileTrack[]): FsDir[] {
+    // Group tracks by source.
+    const bySource = new Map<string, FileTrack[]>();
+    for (const t of tracks) {
+      if (!bySource.has(t.source_id)) bySource.set(t.source_id, []);
+      bySource.get(t.source_id)!.push(t);
+    }
+
+    // Use full-library prefixes so filtering never collapses intermediate dirs.
+    const prefixes = this._sourcePrefixes();
+    const result: FsDir[] = [];
+
+    for (const [sid, sTracks] of bySource) {
+      const source  = this._sources.find(s => s.id === sid);
+      const prefix  = prefixes.get(sid) ?? "";
+
+      const rootDir: FsDir = {
+        kind: "dir", name: source?.label ?? sid,
+        key: `s:${sid}`, children: [], allTracks: sTracks,
+      };
+
+      for (const t of sTracks) {
+        // Strip the source root prefix to get a relative path.
+        const rel   = prefix && t.path.startsWith(prefix)
+          ? t.path.slice(prefix.length)
+          : t.path.replace(/^\//, "");  // fallback: strip leading slash only
+        const parts = rel.split("/").filter(Boolean);  // remove empty segments
+        const dirs  = parts.slice(0, -1);  // directory components
+
+        // Walk or create directory nodes.
+        let cur = rootDir;
+        for (let i = 0; i < dirs.length; i++) {
+          const dirKey = `d:${sid}::${dirs.slice(0, i + 1).join("/")}`;
+          let child = cur.children.find(c => c.kind === "dir" && c.key === dirKey) as FsDir | undefined;
+          if (!child) {
+            child = { kind: "dir", name: dirs[i], key: dirKey, children: [], allTracks: [] };
+            cur.children.push(child);
+          }
+          child.allTracks.push(t);
+          cur = child;
         }
-      });
-    return null;
+
+        cur.children.push({ kind: "file", track: t });
+      }
+
+      sortFsDir(rootDir);
+      result.push(rootDir);
+    }
+
+    result.sort((a, b) => a.name.localeCompare(b.name));
+    return result;
   }
 
-  // ---- drag-and-drop (search → queue) ----
+  // ---- drag-and-drop ----
 
-  /** Drag tracks from the search panel; queue panel accepts the drop. */
+  /** Drag tracks from a row; uses selection if the row's key is selected. */
   private _onSearchDragStart(e: DragEvent, ownTracks: FileTrack[], key: string): void {
     const isSel  = this._selected.has(key);
     const tracks = isSel && this._selected.size > 0 ? this._selectedTracks() : ownTracks;
@@ -420,141 +540,65 @@ export class FilesPlayerElement extends PlayerBase {
     e.dataTransfer!.setData("queue-items-json", JSON.stringify(tracks.map(fileTrackToQueueItem)));
   }
 
-  // ---- source label lookup ----
-
-  private _sourceLabel(sourceId: string): string {
-    return this._sources.find(s => s.id === sourceId)?.label ?? sourceId;
-  }
-
-  // ---- rendering: cover art helpers ----
-
-  // ---- rendering: search panel ----
-
-  /** Sort a track list by current sort column and direction. */
-  private _sortedTracks(tracks: FileTrack[]): FileTrack[] {
-    return [...tracks].sort((a, b) => {
-      let cmp = 0;
-      switch (this._sortCol) {
-        case "artist": cmp = a.artist.localeCompare(b.artist) || a.album.localeCompare(b.album) || ((a.track_number ?? 999) - (b.track_number ?? 999)); break;
-        case "album":  cmp = a.album.localeCompare(b.album)   || a.artist.localeCompare(b.artist) || ((a.track_number ?? 999) - (b.track_number ?? 999)); break;
-        case "track":  cmp = a.title.localeCompare(b.title); break;
-        case "year":   cmp = ((a.year ?? 0) - (b.year ?? 0)) || a.artist.localeCompare(b.artist); break;
-        case "source": cmp = this._sourceLabel(a.source_id).localeCompare(this._sourceLabel(b.source_id)); break;
-      }
-      return cmp * this._sortDir;
-    });
-  }
-
-  /** Group tracks into sorted [artist, tracks[]] pairs. */
-  private _groupByArtist(tracks: FileTrack[]): [string, FileTrack[]][] {
-    const map = new Map<string, FileTrack[]>();
-    for (const t of tracks) {
-      if (!map.has(t.artist)) map.set(t.artist, []);
-      map.get(t.artist)!.push(t);
-    }
-    return [...map.entries()].sort(([a], [b]) => this._sortDir * a.localeCompare(b));
-  }
-
-  /** Group tracks into sorted [key, tracks[]] pairs by album+artist. */
-  private _groupByAlbum(tracks: FileTrack[]): [string, FileTrack[]][] {
-    const map = new Map<string, FileTrack[]>();
-    for (const t of tracks) {
-      const key = `${t.album}||${t.artist}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(t);
-    }
-    return [...map.entries()].sort(([, a], [, b]) => {
-      const fa = a[0]; const fb = b[0];
-      let cmp = 0;
-      switch (this._sortCol) {
-        case "artist": cmp = fa.artist.localeCompare(fb.artist) || fa.album.localeCompare(fb.album); break;
-        case "year":   cmp = ((fa.year ?? 0) - (fb.year ?? 0)) || fa.album.localeCompare(fb.album); break;
-        case "source": cmp = this._sourceLabel(fa.source_id).localeCompare(this._sourceLabel(fb.source_id)); break;
-        default:       cmp = fa.album.localeCompare(fb.album) || fa.artist.localeCompare(fb.artist);
-      }
-      return cmp * this._sortDir;
-    });
-  }
-
-  /** Thumbnail cell: cover art layered over a placeholder; placeholder shows on img error. */
-  private _artImgCell(trackId: string): TemplateResult {
-    return html`
-      <div style="position:relative;width:32px;height:32px;border-radius:3px;overflow:hidden;flex-shrink:0;">
-        <div class="row-thumb-ph">♪</div>
-        <img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"
-             src="/api/files/cover/${trackId}"
-             @error=${(e: Event) => { (e.target as HTMLImageElement).style.display = "none"; }}
-             alt="" />
-      </div>`;
-  }
-
-  /** Artist image cell: Wikipedia URL if loaded, placeholder otherwise. */
-  private _artistImgCell(name: string): TemplateResult {
-    const url = this._loadArtistImage(name);
-    return url
-      ? html`<img class="row-thumb" src="${url}" alt="" />`
-      : html`<div class="row-thumb-ph">♪</div>`;
-  }
+  // ---- selection ----
 
   /**
-   * Flat ordered list of all currently visible row keys (mirrors render order).
-   * Used by shift-click to compute the selected range.
+   * Flat ordered list of all visible row keys in tree render order —
+   * includes both dir/source keys and file keys, so shift-click ranges
+   * work across both node types.
    */
   private _visibleKeyOrder(): string[] {
     const keys: string[] = [];
-    const filtered = this._filteredTracks();
-    const mode     = this._displayMode();
-    if (mode === "artists") {
-      for (const [name, aTracks] of this._groupByArtist(filtered)) {
-        keys.push(`a:${name}`);
-        if (this._expandedArtists.has(name)) {
-          for (const [albumKey, alTracks] of this._groupByAlbum(aTracks)) {
-            keys.push(`l:${albumKey}`);
-            if (this._expandedAlbums.has(albumKey)) {
-              for (const tr of this._sortedTracks(alTracks)) keys.push(`t:${tr.id}`);
-            }
-          }
-        }
-      }
-    } else if (mode === "albums") {
-      for (const [albumKey, alTracks] of this._groupByAlbum(filtered)) {
-        keys.push(`l:${albumKey}`);
-        if (this._expandedAlbums.has(albumKey)) {
-          for (const tr of this._sortedTracks(alTracks)) keys.push(`t:${tr.id}`);
-        }
-      }
-    } else {
-      for (const tr of this._sortedTracks(filtered)) keys.push(`t:${tr.id}`);
-    }
+    const anyFilter = this._anyFilterActive();
+
+    const walk = (node: FsNode) => {
+      if (node.kind === "file") { keys.push(`t:${node.track.id}`); return; }
+      keys.push(node.key);  // dir or source node
+      const expanded = anyFilter || this._expandedDirs.has(node.key);
+      if (expanded) { for (const c of node.children) walk(c); }
+    };
+
+    for (const root of this._buildFsTree(this._filteredTracks())) walk(root);
     return keys;
   }
 
-  /** Collect all FileTrack objects for the current selection (deduped). */
+  /**
+   * Resolve the current selection to a deduplicated list of FileTrack objects.
+   * Supports t: (file), d: (directory), and s: (source root) keys.
+   * Tracks are drawn from the filtered set so only visible files are included.
+   */
   private _selectedTracks(): FileTrack[] {
+    const filtered  = this._filteredTracks();
+    const prefixes  = this._sourcePrefixes();
     const result: FileTrack[] = [];
     const seen = new Set<string>();
+
+    const add = (t: FileTrack) => { if (!seen.has(t.id)) { result.push(t); seen.add(t.id); } };
+
     for (const key of this._selected) {
-      let matches: FileTrack[];
-      if (key.startsWith("a:")) {
-        const name = key.slice(2);
-        matches = this._tracks.filter(t => t.artist === name);
-      } else if (key.startsWith("l:")) {
-        const raw  = key.slice(2);
-        const sep  = raw.lastIndexOf("||");
-        const album = raw.slice(0, sep); const artist = raw.slice(sep + 2);
-        matches = this._tracks.filter(t => t.album === album && t.artist === artist);
-      } else {
-        const id = key.slice(2);
-        matches = this._tracks.filter(t => t.id === id);
-      }
-      for (const t of matches) {
-        if (!seen.has(t.id)) { result.push(t); seen.add(t.id); }
+      if (key.startsWith("t:")) {
+        const t = filtered.find(tr => tr.id === key.slice(2));
+        if (t) add(t);
+      } else if (key.startsWith("s:")) {
+        const sid = key.slice(2);
+        filtered.filter(t => t.source_id === sid).forEach(add);
+      } else if (key.startsWith("d:")) {
+        // key format: "d:{sourceId}::{relDirPath}"
+        const rest   = key.slice(2);
+        const sep    = rest.indexOf("::");
+        const sid    = rest.slice(0, sep);
+        const relDir = rest.slice(sep + 2);
+        const pfx    = prefixes.get(sid) ?? "";
+        filtered.filter(t => {
+          const rel = pfx && t.path.startsWith(pfx) ? t.path.slice(pfx.length) : t.path.replace(/^\//, "");
+          return rel.startsWith(relDir + "/");
+        }).forEach(add);
       }
     }
     return result;
   }
 
-  /** Handle click / ctrl-click / shift-click for library row selection. */
+  /** Handle click / ctrl-click / shift-click for track row selection. */
   private _onRowClick(e: MouseEvent, key: string): void {
     if (e.shiftKey && this._anchor !== null) {
       const order = this._visibleKeyOrder();
@@ -578,12 +622,26 @@ export class FilesPlayerElement extends PlayerBase {
     this._emitSelectionState();
   }
 
+  // ---- rendering helpers ----
+
+  /** Album art thumbnail with placeholder on error. */
+  private _artImgCell(trackId: string): TemplateResult {
+    return html`
+      <div class="node-thumb-wrap">
+        <div class="node-thumb-ph">♪</div>
+        <img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"
+             src="/api/files/cover/${trackId}"
+             @error=${(e: Event) => { (e.target as HTMLImageElement).style.display = "none"; }}
+             alt="" />
+      </div>`;
+  }
+
   /**
-   * Append / add-after-current / play-now action buttons.
-   * When the row's key is in the selection, acts on the full selection.
+   * +/⏭/▶ action buttons for a row.
+   * When the row's key is in the active selection, acts on the full selection instead.
    */
   private _renderActions(tracks: FileTrack[], key: string): TemplateResult {
-    const isSel    = this._selected.has(key);
+    const isSel     = this._selected.has(key);
     const effective = isSel && this._selected.size > 0 ? this._selectedTracks() : tracks;
     return html`
       <div class="row-actions">
@@ -596,225 +654,128 @@ export class FilesPlayerElement extends PlayerBase {
       </div>`;
   }
 
-  /** Sortable column header row above the search results. */
-  private _renderColumnHeader(): TemplateResult {
-    const h = (col: SortCol, label: string) => html`
-      <button class="sort-btn ${this._sortCol === col ? "active" : ""}"
-              @click=${() => {
-                if (this._sortCol === col)
-                  this._sortDir = (this._sortDir === 1 ? -1 : 1) as 1 | -1;
-                else { this._sortCol = col; this._sortDir = 1; }
-              }}>
-        ${label}${this._sortCol === col ? (this._sortDir === 1 ? " ▲" : " ▼") : ""}
-      </button>`;
+  // ---- rendering: FS tree ----
+
+  /**
+   * Render one tree node (dir or file) and, if expanded, all its children.
+   * depth: indentation level (0 = source root, 1 = first subdir, …)
+   * anyFilter: when true, all dirs auto-expand so matches are visible.
+   */
+  private _renderFsNode(node: FsNode, depth: number, anyFilter: boolean): TemplateResult[] {
+    const indent = `${depth * 1.25}rem`;
+
+    if (node.kind === "file") {
+      const t    = node.track;
+      const tKey = `t:${t.id}`;
+      // Show metadata title; fall back to filename stem.
+      const fileName = t.path.split("/").pop() ?? t.path;
+      const label    = t.title || fileName.replace(/\.[^.]+$/, "");
+      return [html`
+        <div class="fs-node ${this._selected.has(tKey) ? "selected" : ""}"
+             style="padding-left: calc(0.5rem + ${indent})"
+             draggable="true"
+             @click=${(e: MouseEvent) => this._onRowClick(e, tKey)}
+             @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, [t], tKey)}>
+          <span class="node-expander-ph"></span>
+          ${this._artImgCell(t.id)}
+          <span class="node-name" title="${label}">${label}</span>
+          <span class="node-meta">
+            ${t.album || t.artist ? html`<span>${
+              t.album && t.artist ? `in ${t.album} by ${t.artist}`
+              : t.album           ? `in ${t.album}`
+              :                     `by ${t.artist}`
+            }</span>` : nothing}
+            ${t.duration ? html`<span>${fmtDur(t.duration)}</span>` : nothing}
+          </span>
+          ${this._renderActions([t], tKey)}
+        </div>`];
+    }
+
+    // Directory node.
+    const expanded = anyFilter || this._expandedDirs.has(node.key);
+    const rows: TemplateResult[] = [html`
+      <div class="fs-node is-dir ${this._selected.has(node.key) ? "selected" : ""}"
+           style="padding-left: calc(0.5rem + ${indent})"
+           draggable="true"
+           @click=${(e: MouseEvent) => this._onRowClick(e, node.key)}
+           @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, node.allTracks, node.key)}>
+        <button class="node-expander ${expanded ? "open" : ""}"
+                title="${expanded ? "Collapse" : "Expand"}"
+                @click=${(e: MouseEvent) => {
+                  e.stopPropagation();  // don't trigger row selection
+                  if (anyFilter) return;
+                  const s = new Set(this._expandedDirs);
+                  if (expanded) s.delete(node.key); else s.add(node.key);
+                  this._expandedDirs = s;
+                }}>▶</button>
+        <span class="node-name dir-name">${node.name}</span>
+        <span class="node-meta">
+          <span>${node.allTracks.length} track${node.allTracks.length !== 1 ? "s" : ""}</span>
+        </span>
+        ${this._renderActions(node.allTracks, node.key)}
+      </div>`];
+
+    if (expanded) {
+      for (const child of node.children) {
+        rows.push(...this._renderFsNode(child, depth + 1, anyFilter));
+      }
+    }
+    return rows;
+  }
+
+  /** Render the full FS tree for all active sources. */
+  private _renderFsTree(): TemplateResult {
+    const filtered  = this._filteredTracks();
+    const tree      = this._buildFsTree(filtered);
+    const anyFilter = this._anyFilterActive();
+
+    if (tree.length === 0) {
+      return html`<div class="empty">${
+        this._tracks.length === 0 ? "No files — scan a source to populate the library." : "No files match the current filters."
+      }</div>`;
+    }
+
+    return html`${tree.flatMap(root => this._renderFsNode(root, 0, anyFilter))}`;
+  }
+
+  // ---- rendering: search panel ----
+
+  private _renderSearchPanel(): TemplateResult {
     const selInfo = this._selected.size > 0
       ? html`<span class="sel-info">${this._selected.size} selected</span
           ><button class="sel-clear" title="Clear selection"
                    @click=${() => { this._selected = new Set(); this._anchor = null; }}>✕</button>`
       : nothing;
-    return html`
-      <div class="result-header">
-        <span></span><span></span>
-        ${h("artist", t("files.artist"))}
-        ${h("album",  t("files.album"))}
-        ${h("track",  t("files.track"))}
-        ${h("year",   t("files.year"))}
-        ${h("source", "Source")}
-        <span style="color:#64748b">${selInfo || html`Action`}</span>
-      </div>`;
-  }
-
-  /** Hierarchical artist → album → track tree (default and artist-only mode). */
-  private _renderArtistList(tracks: FileTrack[]): TemplateResult {
-    const artists = this._groupByArtist(tracks);
-    if (artists.length === 0) return html`<div class="empty">No artists found</div>`;
-    return html`${artists.map(([name, aTracks]) => {
-      const aKey     = `a:${name}`;
-      const expanded = this._expandedArtists.has(name);
-      const albums   = this._groupByAlbum(aTracks);
-      return html`
-        <div class="result-row ${this._selected.has(aKey) ? "selected" : ""}"
-             draggable="true"
-             @click=${(e: MouseEvent) => this._onRowClick(e, aKey)}
-             @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, aTracks, aKey)}>
-          <!-- expand icon is a separate button so it doesn't trigger row selection -->
-          <button class="expand-icon ${expanded ? "open" : ""}"
-                  title="${expanded ? "Collapse" : "Expand"}"
-                  @click=${(e: MouseEvent) => {
-                    e.stopPropagation();
-                    const s = new Set(this._expandedArtists);
-                    if (expanded) s.delete(name); else s.add(name);
-                    this._expandedArtists = s;
-                  }}>▶</button>
-          ${this._artistImgCell(name)}
-          <span class="row-cell strong" title="${name}">${name}</span>
-          <span class="row-cell dim">${albums.length} album${albums.length !== 1 ? "s" : ""}</span>
-          <span class="row-cell dim">${aTracks.length} track${aTracks.length !== 1 ? "s" : ""}</span>
-          <span class="row-cell"></span>
-          <span class="row-cell"></span>
-          ${this._renderActions(aTracks, aKey)}
-        </div>
-        ${expanded ? albums.map(([albumKey, alTracks]) => {
-          const lKey       = `l:${albumKey}`;
-          const albExpanded = this._expandedAlbums.has(albumKey);
-          const first = alTracks[0];
-          return html`
-            <div class="result-row row-album ${this._selected.has(lKey) ? "selected" : ""}"
-                 draggable="true"
-                 @click=${(e: MouseEvent) => this._onRowClick(e, lKey)}
-                 @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, alTracks, lKey)}>
-              <button class="expand-icon ${albExpanded ? "open" : ""}"
-                      title="${albExpanded ? "Collapse" : "Expand"}"
-                      @click=${(e: MouseEvent) => {
-                        e.stopPropagation();
-                        const s = new Set(this._expandedAlbums);
-                        if (albExpanded) s.delete(albumKey); else s.add(albumKey);
-                        this._expandedAlbums = s;
-                      }}>▶</button>
-              ${this._artImgCell(first.id)}
-              <span class="row-cell dim">${first.artist}</span>
-              <span class="row-cell strong" title="${first.album}">${first.album || "(no album)"}</span>
-              <span class="row-cell dim">${alTracks.length} track${alTracks.length !== 1 ? "s" : ""}</span>
-              <span class="row-cell dim">${first.year ?? ""}</span>
-              <span class="row-cell dim">${this._sourceLabel(first.source_id)}</span>
-              ${this._renderActions(alTracks, lKey)}
-            </div>
-            ${albExpanded ? this._sortedTracks(alTracks).map(tr => {
-              const tKey = `t:${tr.id}`;
-              return html`
-                <div class="result-row row-track ${this._selected.has(tKey) ? "selected" : ""}"
-                     draggable="true"
-                     @click=${(e: MouseEvent) => this._onRowClick(e, tKey)}
-                     @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, [tr], tKey)}>
-                  <span></span>
-                  ${this._artImgCell(tr.id)}
-                  <span class="row-cell dim">${tr.artist}</span>
-                  <span class="row-cell dim">${tr.album}</span>
-                  <span class="row-cell" title="${tr.title}">${tr.title}</span>
-                  <span class="row-cell dim">${tr.year ?? ""}</span>
-                  <span class="row-cell dim">${this._sourceLabel(tr.source_id)}</span>
-                  ${this._renderActions([tr], tKey)}
-                </div>`;
-            }) : nothing}
-          `;
-        }) : nothing}
-      `;
-    })}`;
-  }
-
-  /** Expandable album → track list (album/year search mode). */
-  private _renderAlbumList(tracks: FileTrack[]): TemplateResult {
-    const albums = this._groupByAlbum(tracks);
-    if (albums.length === 0) return html`<div class="empty">No albums found</div>`;
-    return html`${albums.map(([key, alTracks]) => {
-      const lKey     = `l:${key}`;
-      const expanded = this._expandedAlbums.has(key);
-      const first    = alTracks[0];
-      return html`
-        <div class="result-row ${this._selected.has(lKey) ? "selected" : ""}"
-             draggable="true"
-             @click=${(e: MouseEvent) => this._onRowClick(e, lKey)}
-             @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, alTracks, lKey)}>
-          <button class="expand-icon ${expanded ? "open" : ""}"
-                  title="${expanded ? "Collapse" : "Expand"}"
-                  @click=${(e: MouseEvent) => {
-                    e.stopPropagation();
-                    const s = new Set(this._expandedAlbums);
-                    if (expanded) s.delete(key); else s.add(key);
-                    this._expandedAlbums = s;
-                  }}>▶</button>
-          ${this._artImgCell(first.id)}
-          <span class="row-cell" title="${first.artist}">${first.artist}</span>
-          <span class="row-cell strong" title="${first.album}">${first.album || "(no album)"}</span>
-          <span class="row-cell dim">${alTracks.length} track${alTracks.length !== 1 ? "s" : ""}</span>
-          <span class="row-cell dim">${first.year ?? ""}</span>
-          <span class="row-cell dim">${this._sourceLabel(first.source_id)}</span>
-          ${this._renderActions(alTracks, lKey)}
-        </div>
-        ${expanded ? this._sortedTracks(alTracks).map(tr => {
-          const tKey = `t:${tr.id}`;
-          return html`
-            <div class="result-row row-track ${this._selected.has(tKey) ? "selected" : ""}"
-                 draggable="true"
-                 @click=${(e: MouseEvent) => this._onRowClick(e, tKey)}
-                 @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, [tr], tKey)}>
-              <span></span>
-              ${this._artImgCell(tr.id)}
-              <span class="row-cell dim">${tr.artist}</span>
-              <span class="row-cell dim">${tr.album}</span>
-              <span class="row-cell" title="${tr.title}">${tr.title}</span>
-              <span class="row-cell dim">${tr.year ?? ""}</span>
-              <span class="row-cell dim">${this._sourceLabel(tr.source_id)}</span>
-              ${this._renderActions([tr], tKey)}
-            </div>`;
-        }) : nothing}
-      `;
-    })}`;
-  }
-
-  /** Flat sorted track list (track-name search mode). */
-  private _renderTrackList(tracks: FileTrack[]): TemplateResult {
-    const sorted = this._sortedTracks(tracks);
-    if (sorted.length === 0) return html`<div class="empty">No tracks found</div>`;
-    return html`${sorted.map(tr => {
-      const tKey = `t:${tr.id}`;
-      return html`
-        <div class="result-row ${this._selected.has(tKey) ? "selected" : ""}"
-             draggable="true"
-             @click=${(e: MouseEvent) => this._onRowClick(e, tKey)}
-             @dragstart=${(e: DragEvent) => this._onSearchDragStart(e, [tr], tKey)}>
-          <span></span>
-          ${this._artImgCell(tr.id)}
-          <span class="row-cell" title="${tr.artist}">${tr.artist}</span>
-          <span class="row-cell dim" title="${tr.album}">${tr.album}</span>
-          <span class="row-cell strong" title="${tr.title}">${tr.title}</span>
-          <span class="row-cell dim">${tr.year ?? ""}</span>
-          <span class="row-cell dim">${this._sourceLabel(tr.source_id)}</span>
-          ${this._renderActions([tr], tKey)}
-        </div>`;
-    })}`;
-  }
-
-  private _renderSearchPanel(): TemplateResult {
-    const mode    = this._displayMode();
-    const results = this._filteredTracks();
 
     return html`
       <div class="search-panel">
         <div class="search-fields">
           <label>${t("files.artist")}</label>
           <input type="text" .value=${live(this._qArtist)}
-                 @input=${(e: Event) => {
-                   this._qArtist = (e.target as HTMLInputElement).value;
-                   this._debounceSearch();
-                 }} />
+                 @input=${(e: Event) => { this._qArtist = (e.target as HTMLInputElement).value; this._debounceSearch(); }} />
           <label>${t("files.album")}</label>
           <input type="text" .value=${live(this._qAlbum)}
-                 @input=${(e: Event) => {
-                   this._qAlbum = (e.target as HTMLInputElement).value;
-                   this._debounceSearch();
-                 }} />
+                 @input=${(e: Event) => { this._qAlbum = (e.target as HTMLInputElement).value; this._debounceSearch(); }} />
           <label>${t("files.year")}</label>
           <input type="text" placeholder="e.g. 1967 or 1965-1970"
                  .value=${live(this._qYear)}
-                 @input=${(e: Event) => {
-                   this._qYear = (e.target as HTMLInputElement).value;
-                   this._debounceSearch();
-                 }} />
+                 @input=${(e: Event) => { this._qYear = (e.target as HTMLInputElement).value; this._debounceSearch(); }} />
           <label>${t("files.track")}</label>
           <input type="text" .value=${live(this._qTrack)}
-                 @input=${(e: Event) => {
-                   this._qTrack = (e.target as HTMLInputElement).value;
-                   this._debounceSearch();
-                 }} />
+                 @input=${(e: Event) => { this._qTrack = (e.target as HTMLInputElement).value; this._debounceSearch(); }} />
+          <hr class="sep" />
+          <label>Path / name</label>
+          <input type="text" placeholder="folder or file name"
+                 .value=${live(this._qPath)}
+                 @input=${(e: Event) => { this._qPath = (e.target as HTMLInputElement).value; this._debounceSearch(); }} />
         </div>
 
-        ${this._renderColumnHeader()}
+        ${selInfo
+          ? html`<div class="tree-info">${selInfo}</div>`
+          : nothing}
 
         <div class="search-results">
-          ${mode === "artists" ? this._renderArtistList(results)
-          : mode === "tracks"  ? this._renderTrackList(results)
-          :                      this._renderAlbumList(results)}
+          ${this._renderFsTree()}
         </div>
       </div>`;
   }

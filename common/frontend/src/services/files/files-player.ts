@@ -1,6 +1,7 @@
 /** Track record as returned by GET /api/files/tracks. */
 export interface FileTrack {
   id: string;
+  path: string;        // absolute path on the backend; used to build FS tree
   title: string;
   artist: string;
   album: string;
