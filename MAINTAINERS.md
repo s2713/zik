@@ -19,8 +19,7 @@ v1 ships with single-maintainer key signing. Tags are signed with
 the keys in `.maintainers/keys/`. A monotonic tag-order check guards against
 downgrade (see threat-model T-SW-15).
 
-Two-of-N co-signing (cosign or equivalent) is planned for v2 — see
-`claude.roadmap.md` in the `zik-meta` repo.
+Two-of-N co-signing (cosign or equivalent) is planned for v2.
 
 ## Adding a maintainer
 
@@ -179,3 +178,55 @@ after the base image is built and never distributed.
 All runtime-critical dependency pins (Python, Rust, npm) live in
 `.dependency-allowlist.yml`. Any change to that file requires a maintainer
 review of the upstream release notes and signatures where available.
+
+---
+
+## IDE / editor hygiene
+
+The following directories are machine-generated or constantly churning; exclude
+them from file-watching and indexed search to keep your IDE responsive.
+
+**VS Code** — add to `.vscode/settings.json`:
+
+```json
+{
+  "files.watcherExclude": {
+    "**/.venv/**": true,
+    "**/__pycache__/**": true,
+    "**/.pytest_cache/**": true,
+    "**/.mypy_cache/**": true,
+    "**/.ruff_cache/**": true,
+    "**/node_modules/**": true,
+    "**/.vite/**": true,
+    "**/dist/**": true,
+    "**/target/**": true,
+    "**/work/**": true
+  },
+  "search.exclude": {
+    "**/.venv": true,
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/target": true,
+    "**/work": true
+  }
+}
+```
+
+**JetBrains IDEs** — right-click each of `.venv/`, `node_modules/`, `dist/`,
+`target/`, `work/` and choose *Mark Directory as → Excluded*.
+
+**Neovim / EditorConfig** — add the generated directories to `.gitignore`
+(already done) and configure your LSP or file-picker to respect it.
+
+---
+
+## License
+
+GPL v3. See [LICENSE](LICENSE).
+
+---
+
+## Contributions
+
+Fork the repository, make your change on a branch, open a pull request.
+Contribution guidelines will be published before the first tagged release.

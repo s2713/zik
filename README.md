@@ -31,14 +31,14 @@ release will follow a period of real-device testing.
 |---|---|
 | **MPD** | Remote-control or stream-to-device modes; see [MPD service](#mpd-service) |
 | **Subsonic** | Navidrome, Funkwhale, Airsonic-Advanced; library cached locally |
-| **Internet radio** | radio-browser.info directory (~30 k stations) + SomaFM |
+| **Internet radio** | radio-browser.info directory (~30k stations) + SomaFM |
 | **Podcasts** | Arbitrary RSS/Atom feeds |
 | **Spotify** | Web Playback SDK (Premium required; Widevine DRM — see [Privacy](#privacy)) |
-| **Local files** | Files stored on the device |
+| **Local files** | Files stored on the device or mounted from LAN (samba)|
 
 ### Planned (later versions)
 
-Local files via removable drives, SMB, WebDAV, NFS, SFTP, and rclone-mounted
+Local files via removable drives, WebDAV, NFS, SFTP, and rclone-mounted
 remotes; Deezer, Apple Music, Amazon Music, SoundCloud, YouTube Music, Tidal,
 Qobuz, Bandcamp, and Podcast Index integration.
 
@@ -247,52 +247,6 @@ gated behind the same password.
 
 ---
 
-## IDE / editor hygiene
-
-The following directories are machine-generated or constantly churning; exclude
-them from file-watching and indexed search to keep your IDE responsive.
-
-**VS Code** — add to `.vscode/settings.json`:
-
-```json
-{
-  "files.watcherExclude": {
-    "**/.venv/**": true,
-    "**/__pycache__/**": true,
-    "**/.pytest_cache/**": true,
-    "**/.mypy_cache/**": true,
-    "**/.ruff_cache/**": true,
-    "**/node_modules/**": true,
-    "**/.vite/**": true,
-    "**/dist/**": true,
-    "**/target/**": true,
-    "**/work/**": true
-  },
-  "search.exclude": {
-    "**/.venv": true,
-    "**/node_modules": true,
-    "**/dist": true,
-    "**/target": true,
-    "**/work": true
-  }
-}
-```
-
-**JetBrains IDEs** — right-click each of `.venv/`, `node_modules/`, `dist/`,
-`target/`, `work/` and choose *Mark Directory as → Excluded*.
-
-**Neovim / EditorConfig** — add the generated directories to `.gitignore`
-(already done) and configure your LSP or file-picker to respect it.
-
----
-
 ## License
 
 GPL v3. See [LICENSE](LICENSE).
-
----
-
-## Contributions
-
-Fork the repository, make your change on a branch, open a pull request.
-Contribution guidelines will be published before the first tagged release.
